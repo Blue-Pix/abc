@@ -1,5 +1,5 @@
 /*
-Copyright © 2020 Blue-Pix HERE bluepixel1214@gmail.com
+Copyright © 2020 Blue-Pix bluepixel1214@gmail.com
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,16 +29,18 @@ import (
 // amiCmd represents the ami command
 var amiCmd = &cobra.Command{
 	Use:   "ami",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "return latest amazon linux ami",
+	Long: `[abc ami]
+This command returns latest amazon linux ami as json format.
+	
+Internally it uses ssm get-parameters-by-path api. (https://docs.aws.amazon.com/ja_jp/systems-manager/latest/userguide/parameter-store-public-parameters.html)
+Please configure your aws credential which has required policy.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+By default, this returns serveral type of amis.
+You can query it with options below. `,
 	Run: func(cmd *cobra.Command, args []string) {
 		amis := getAMIList()
-		if version, err := cmd.Flags().GetInt("version"); version != -1 && err == nil {
+		if version, err := cmd.Flags().GetString("version"); version != "" && err == nil {
 			amis = filterByVersion(version, amis)
 		}
 		if virtualizationType, err := cmd.Flags().GetString("virtualization-type"); virtualizationType != "" && err == nil {
@@ -60,18 +62,18 @@ to quickly create a Cobra application.`,
 
 func init() {
 	rootCmd.AddCommand(amiCmd)
-	amiCmd.Flags().IntP("version", "v", -1, "version number")
-	amiCmd.Flags().StringP("virtualization-type", "V", "", "virtualization type")
-	amiCmd.Flags().StringP("arch", "a", "", "cpu architecture")
-	amiCmd.Flags().StringP("storage", "s", "", "storage type")
-	amiCmd.Flags().StringP("minimal", "m", "", "if minimal image or not")
+	amiCmd.Flags().StringP("version", "v", "", "os version(1 or 2)")
+	amiCmd.Flags().StringP("virtualization-type", "V", "", "virtualization type(hvm or pv)")
+	amiCmd.Flags().StringP("arch", "a", "", "cpu architecture(x86_64 or arm64)")
+	amiCmd.Flags().StringP("storage", "s", "", "storage type(gp2, ebs or s3)")
+	amiCmd.Flags().StringP("minimal", "m", "", "if minimal image or not(true or false)")
 }
 
 const PATH = "/aws/service/ami-amazon-linux-latest"
 
 type AMI struct {
 	Os                 string `json:"os"`
-	Version            int    `json:"version"`
+	Version            string `json:"version"`
 	VirtualizationType string `json:"virtualization_type"`
 	Arch               string `json:"arch"`
 	Storage            string `json:"storage"`
@@ -95,7 +97,7 @@ func toAMI(parameter *ssm.Parameter) AMI {
 	list := r.FindAllStringSubmatch(aws.StringValue(parameter.Name), -1)
 	ami := AMI{
 		Os:                 list[0][1],
-		Version:            1,
+		Version:            "1",
 		VirtualizationType: list[0][4],
 		Arch:               list[0][5],
 		Storage:            list[0][6],
@@ -103,7 +105,7 @@ func toAMI(parameter *ssm.Parameter) AMI {
 		Arn:                aws.StringValue(parameter.ARN),
 	}
 	if list[0][2] != "" {
-		ami.Version = 2
+		ami.Version = list[0][2]
 	}
 	if list[0][3] != "" {
 		ami.Minimal = true
@@ -136,7 +138,7 @@ func getAMIList() []AMI {
 	return amis
 }
 
-func filterByVersion(version int, amis []AMI) []AMI {
+func filterByVersion(version string, amis []AMI) []AMI {
 	var newAmis []AMI
 	for _, ami := range amis {
 		if version == ami.Version {
