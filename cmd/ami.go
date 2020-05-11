@@ -18,12 +18,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"github.com/spf13/cobra"
-	"regexp"
-	"strconv"
 )
 
 // amiCmd represents the ami command
