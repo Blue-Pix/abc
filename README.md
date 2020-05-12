@@ -17,7 +17,7 @@ cd abc
 go install
 ```
 
-# Requirement
+# Permissions
 
 You have to set aws credentials in advance.  
 Which policy to use depends on sub command type.  
@@ -58,3 +58,9 @@ This result is in ap-northeast-1 (Asia/Tokyo).
 
 Originally, it returns 10~15 AMIs, as parameter path is `/aws/service/ami-amazon-linux-latest` and search sub directory recursively.  
 If you wanna spare time to find the path of the AMI, use this helper and query it!
+
+# License
+This code is made available under the MIT license.
+
+# Contributing
+Feel free to open issues 🎉
