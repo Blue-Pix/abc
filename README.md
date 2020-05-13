@@ -60,7 +60,7 @@ Originally, it returns 10~15 AMIs, as parameter path is `/aws/service/ami-amazon
 If you wanna spare time to find the path of the AMI, use this helper and query it!
 
 # License
-This code is made available under the MIT license.
+This code is made available under the Apache License 2.0.
 
 # Contributing
 Feel free to open issues 🎉
