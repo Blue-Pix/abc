@@ -3,8 +3,10 @@
 It wraps, pipes and extends AWS API.  
 
 # Install
-Install source code with go, build the binaries yourself, and run as `abc` command.
+You can install binaries from [releases](https://github.com/Blue-Pix/abc/releases),   
+or pull [repository](https://github.com/Blue-Pix/abc) and build the binaries yourself.
 
+If you build yourself:  
 **Prerequisition**
 - Git
 - Go

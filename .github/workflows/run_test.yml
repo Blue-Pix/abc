@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.14
+      - name: get dependencies
+        run: go get -v -t -d ./...
+      - name: setup aws credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+      - name: run test
+        run: go test -v ./lib/...
