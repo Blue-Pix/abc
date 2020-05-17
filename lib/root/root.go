@@ -16,5 +16,7 @@ func NewCmd() *cobra.Command {
 			return nil
 		},
 	}
+	// aws profile
+	cmd.PersistentFlags().String("profile", "", "(optional) which aws profile to use")
 	return cmd
 }

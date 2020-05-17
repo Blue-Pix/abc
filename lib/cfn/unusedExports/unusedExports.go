@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -15,20 +16,17 @@ import (
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unused-exports",
-		Short: "list all exports which not used in any stack.",
+		Short: "List all exports which not used in any stack.",
 		Long: `
-		[abc cfn unused-exports]
-		This command returns all CloudFormation's exports name,
-		which not used in any stack.
-			
-		Internally it uses aws cloudformation api.
-		Please configure your aws credentials with following policies.
-		- cloudformation:ListExports
-		- cloudformation:ListImports
-		- cloudformation:ListStacks
-
-		By default, it prints exports names separated by comma.
-		You can customize delimiter with -d option.`,
+[abc cfn unused-exports]
+This command returns all CloudFormation's exports name,
+which not used in any stack, in csv format.
+	
+Internally it uses aws cloudformation api.
+Please configure your aws credentials with following policies.
+- cloudformation:ListExports
+- cloudformation:ListImports
+- cloudformation:ListStacks`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := run(cmd, args)
 			return err
@@ -47,14 +45,11 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func Run(cmd *cobra.Command, args []string) (string, error) {
-	sess := session.Must(session.NewSession())
-	// sess := session.Must(
-	// 	session.NewSessionWithOptions(
-	// 		session.Options{
-	// 			Profile: "profile",
-	// 		},
-	// 	),
-	// )
+	profile, err := cmd.Flags().GetString("profile")
+	if err != nil {
+		return "", err
+	}
+	sess := util.CreateSession(profile)
 
 	stacks := make(map[string]string)
 	if err := listStacks(sess, nil, stacks); err != nil {
@@ -68,6 +63,7 @@ func Run(cmd *cobra.Command, args []string) (string, error) {
 	var csv []string
 	csv = append(csv, "name,exporting_stack")
 	for key, _ := range exports {
+		cmd.Print(".")
 		var result []string
 		if err := listImports(sess, key, nil, &result); err != nil {
 			return "", err
@@ -76,6 +72,7 @@ func Run(cmd *cobra.Command, args []string) (string, error) {
 			csv = append(csv, fmt.Sprintf("%s,%s", key, stacks[exports[key]]))
 		}
 	}
+	cmd.Print("\n")
 	return strings.Join(csv, "\n"), nil
 }
 
