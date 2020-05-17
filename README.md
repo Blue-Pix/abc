@@ -2,6 +2,16 @@
 `abc` is a helper library including several sub commands.  
 It wraps, pipes and extends AWS API.  
 
+## Table of Contents
+
+- [Install](#install)
+- [Credentials and Permissions](#credentials-and-permissions)
+- [Usage](#usage)
+  - [abc ami](#abc-ami)
+  - [abc cfn unused-exports](#abc-cfn-unused-exports)
+- [License](#license)
+- [Contributing](#contributing)
+
 # Install
 You can install binaries from [releases](https://github.com/Blue-Pix/abc/releases),   
 or pull [repository](https://github.com/Blue-Pix/abc) and build the binaries yourself.
@@ -19,7 +29,7 @@ cd abc
 go install
 ```
 
-# Permissions
+# Credentials and Permissions
 
 You have to set aws credentials in advance.  
 Which policy to use depends on sub command type.  
@@ -27,6 +37,9 @@ Which policy to use depends on sub command type.
 For example, `abc ami` command querying latest Amazon Linux AMI, requires following policy.
 
 - ssm:GetParametersByPath
+
+Without option, we use your default aws credentials.  
+You can also pass `--region` and `--profile` option like aws cli.
 
 # Usage
 To list all sub commands, type `abc help`.
@@ -54,12 +67,52 @@ $ abc ami -v 2 -V hvm -a x86_64 -s gp2 | jq '.'
 ]
 ```
 
-**Please check configured region**  
-
-This result is in ap-northeast-1 (Asia/Tokyo).
-
 Originally, it returns 10~15 AMIs, as parameter path is `/aws/service/ami-amazon-linux-latest` and search sub directory recursively.  
 If you wanna spare time to find the path of the AMI, use this helper and query it!
+
+## `abc cfn unused-exports`
+
+List Cloudformation's exports, which not used in any stack.  
+It prints `name` and `exporting_stack` as csv with header.
+
+**Example:**
+
+There is a stack named `abc-sample-stack` with following template.
+
+```yaml
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  PJ:
+    Description: project identifier
+    Type: String
+    Default: abc
+Resources:
+  Queue1:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Sub ${PJ}-queue1
+  Queue2:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Sub ${PJ}-queue2
+Outputs:
+  Queue1:
+    Value: !GetAtt Queue1.Arn
+    Export:
+      Name: !Sub ${PJ}-queue1-arn
+  Queue2:
+    Value: !GetAtt Queue2.Arn
+    Export:
+      Name: !Sub ${PJ}-queue2-arn
+```
+
+```sh
+$ abc cfn unused-exports
+..
+name,exporting_stack
+abc-queue1-arn,abc-sample-stack
+abc-queue2-arn,abc-sample-stack
+```
 
 # License
 This code is made available under the Apache License 2.0.
