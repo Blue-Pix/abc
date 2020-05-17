@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"io/ioutil"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/Blue-Pix/abc/lib/ami"
+	"github.com/Blue-Pix/abc/lib/cfn"
+	"github.com/Blue-Pix/abc/lib/cfn/unusedExports"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 )
 
-func prepareCmd(args []string) *cobra.Command {
+func prepareAmiCmd(args []string) *cobra.Command {
 	cmd := NewCmd()
 	cmd.SetArgs(args)
 	amiCmd := ami.NewCmd()
@@ -19,11 +23,21 @@ func prepareCmd(args []string) *cobra.Command {
 	return cmd
 }
 
+func prepareCfnCmd(args []string) *cobra.Command {
+	cmd := NewCmd()
+	cmd.SetArgs(args)
+	cfnCmd := cfn.NewCmd()
+	unusedExportsCmd := unusedExports.NewCmd()
+	cfnCmd.AddCommand(unusedExportsCmd)
+	cmd.AddCommand(cfnCmd)
+	return cmd
+}
+
 func TestExecute(t *testing.T) {
 	t.Run("ami", func(t *testing.T) {
 		t.Run("query by --version", func(t *testing.T) {
 			args := []string{"ami", "--version", "2"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -45,7 +59,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by -v", func(t *testing.T) {
 			args := []string{"ami", "-v", "1"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -67,7 +81,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by --virtualization-type", func(t *testing.T) {
 			args := []string{"ami", "--virtualization-type", "hvm"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -89,7 +103,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by -V", func(t *testing.T) {
 			args := []string{"ami", "-V", "pv"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -111,7 +125,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by --arch", func(t *testing.T) {
 			args := []string{"ami", "--arch", "x86_64"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -133,7 +147,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by -a", func(t *testing.T) {
 			args := []string{"ami", "-a", "arm64"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -155,7 +169,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by --storage", func(t *testing.T) {
 			args := []string{"ami", "--storage", "gp2"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -177,7 +191,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by -s", func(t *testing.T) {
 			args := []string{"ami", "-s", "ebs"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -199,7 +213,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by --minimal", func(t *testing.T) {
 			args := []string{"ami", "--minimal", "true"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -221,7 +235,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query by -m", func(t *testing.T) {
 			args := []string{"ami", "-m", "false"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -243,7 +257,7 @@ func TestExecute(t *testing.T) {
 
 		t.Run("query with full options", func(t *testing.T) {
 			args := []string{"ami", "-v", "2", "-V", "hvm", "-a", "x86_64", "-s", "gp2", "-m", "false"}
-			cmd := prepareCmd(args)
+			cmd := prepareAmiCmd(args)
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -273,6 +287,26 @@ func TestExecute(t *testing.T) {
 					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[10], l[5]))
 				}
 			}
+		})
+	})
+
+	t.Run("cfn", func(t *testing.T) {
+		t.Run("unusedExports", func(t *testing.T) {
+			t.Run("", func(t *testing.T) {
+				args := []string{"cfn", "unused-exports"}
+				cmd := prepareCfnCmd(args)
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				cmd.Execute()
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				list := strings.Split(string(out), "\n")
+				assert.Regexp(t, regexp.MustCompile(`^\.+$`), list[0])
+				assert.Equal(t, "name,exporting_stack", list[1])
+				assert.Regexp(t, regexp.MustCompile(`^.+,.+$`), list[2])
+			})
 		})
 	})
 }
