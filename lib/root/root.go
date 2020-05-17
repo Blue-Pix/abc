@@ -16,7 +16,7 @@ func NewCmd() *cobra.Command {
 			return nil
 		},
 	}
-	// aws profile
 	cmd.PersistentFlags().String("profile", "", "(optional) which aws profile to use")
+	cmd.PersistentFlags().String("region", "", "(optional) which aws region to use")
 	return cmd
 }

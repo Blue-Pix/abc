@@ -62,7 +62,11 @@ func Run(cmd *cobra.Command, args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sess := util.CreateSession(profile)
+	region, err := cmd.Flags().GetString("region")
+	if err != nil {
+		return "", err
+	}
+	sess := util.CreateSession(profile, region)
 
 	amis, err := getAMIList(sess)
 	if err != nil {
