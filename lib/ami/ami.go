@@ -2,10 +2,10 @@ package ami
 
 import (
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strconv"
 
+	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
@@ -14,52 +14,86 @@ import (
 
 const PATH = "/aws/service/ami-amazon-linux-latest"
 
+var (
+	version            string
+	virtualizationType string
+	arch               string
+	storage            string
+	minimal            string
+)
+
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ami",
-		Short: "return latest amazon linux ami",
-		Long: `[abc ami]
-	This command returns latest amazon linux ami as json format.
-		
-	Internally it uses ssm get-parameters-by-path api. (https://docs.aws.amazon.com/ja_jp/systems-manager/latest/userguide/parameter-store-public-parameters.html)
-	Please configure your aws credential which has required policy.
+		Short: "Returns latest amazon linux ami",
+		Long: `
+[abc ami]
+This command returns latest amazon linux ami as json format.
+	
+Internally it uses ssm get-parameters-by-path api. (https://docs.aws.amazon.com/ja_jp/systems-manager/latest/userguide/parameter-store-public-parameters.html)
+Please configure your aws credential which has required policy.
 
-	By default, this returns serveral type of amis.
-	You can query it with options below. `,
-		Run: run,
+By default, this returns serveral type of amis.
+You can query it with options below. `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			err := run(cmd, args)
+			return err
+		},
 	}
-	cmd.Flags().StringP("version", "v", "", "os version(1 or 2)")
-	cmd.Flags().StringP("virtualization-type", "V", "", "virtualization type(hvm or pv)")
-	cmd.Flags().StringP("arch", "a", "", "cpu architecture(x86_64 or arm64)")
-	cmd.Flags().StringP("storage", "s", "", "storage type(gp2, ebs or s3)")
-	cmd.Flags().StringP("minimal", "m", "", "if minimal image or not(true or false)")
+	cmd.Flags().StringVarP(&version, "version", "v", "", "os version(1 or 2)")
+	cmd.Flags().StringVarP(&virtualizationType, "virtualization-type", "V", "", "virtualization type(hvm or pv)")
+	cmd.Flags().StringVarP(&arch, "arch", "a", "", "cpu architecture(x86_64 or arm64)")
+	cmd.Flags().StringVarP(&storage, "storage", "s", "", "storage type(gp2, ebs or s3)")
+	cmd.Flags().StringVarP(&minimal, "minimal", "m", "", "if minimal image or not(true or false)")
 	return cmd
 }
 
-func run(cmd *cobra.Command, args []string) {
-	str := Run(cmd, args)
+func run(cmd *cobra.Command, args []string) error {
+	str, err := Run(cmd, args)
+	if err != nil {
+		return err
+	}
 	cmd.Println(str)
+	return nil
 }
 
-func Run(cmd *cobra.Command, args []string) string {
-	amis := getAMIList()
-	if version, err := cmd.Flags().GetString("version"); version != "" && err == nil {
+func Run(cmd *cobra.Command, args []string) (string, error) {
+	profile, err := cmd.Flags().GetString("profile")
+	if err != nil {
+		return "", err
+	}
+	region, err := cmd.Flags().GetString("region")
+	if err != nil {
+		return "", err
+	}
+	sess := util.CreateSession(profile, region)
+
+	amis, err := getAMIList(sess)
+	if err != nil {
+		return "", err
+	}
+
+	if version != "" {
 		amis = filterByVersion(version, amis)
 	}
-	if virtualizationType, err := cmd.Flags().GetString("virtualization-type"); virtualizationType != "" && err == nil {
+	if virtualizationType != "" {
 		amis = filterByVirtualizationType(virtualizationType, amis)
 	}
-	if arch, err := cmd.Flags().GetString("arch"); arch != "" && err == nil {
+	if arch != "" {
 		amis = filterByArch(arch, amis)
 	}
-	if storage, err := cmd.Flags().GetString("storage"); storage != "" && err == nil {
+	if storage != "" {
 		amis = filterByStorage(storage, amis)
 	}
-	if minimal, err := cmd.Flags().GetString("minimal"); minimal != "" && err == nil {
+	if minimal != "" {
 		amis = filterByMinimal(minimal, amis)
 	}
-	str := toJSON(amis)
-	return str
+
+	str, err := toJSON(amis)
+	if err != nil {
+		return "", nil
+	}
+	return str, nil
 }
 
 type AMI struct {
@@ -104,15 +138,15 @@ func toAMI(parameter *ssm.Parameter) AMI {
 	return ami
 }
 
-func getAMIList() []AMI {
-	sess := session.Must(session.NewSession())
+func getAMIList(sess *session.Session) ([]AMI, error) {
 	var parameters []*ssm.Parameter
 	var token *string = nil
+	var amis []AMI
 
 	for {
 		resp, err := getParametersByPath(sess, token, PATH)
 		if err != nil {
-			panic(err)
+			return amis, err
 		}
 		parameters = append(parameters, resp.Parameters...)
 
@@ -122,11 +156,10 @@ func getAMIList() []AMI {
 		token = resp.NextToken
 	}
 
-	var amis []AMI
 	for _, parameter := range parameters {
 		amis = append(amis, toAMI(parameter))
 	}
-	return amis
+	return amis, nil
 }
 
 func filterByVersion(version string, amis []AMI) []AMI {
@@ -180,12 +213,11 @@ func filterByMinimal(minimal string, amis []AMI) []AMI {
 	return newAmis
 }
 
-func toJSON(amis []AMI) string {
+func toJSON(amis []AMI) (string, error) {
 	jsonBytes, err := json.Marshal(amis)
 	if err != nil {
-		panic(err)
-		fmt.Println(err)
+		return "", err
 	}
 	jsonStr := string(jsonBytes)
-	return jsonStr
+	return jsonStr, nil
 }
