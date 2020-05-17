@@ -10,7 +10,7 @@ import (
 
 	"github.com/Blue-Pix/abc/lib/ami"
 	"github.com/Blue-Pix/abc/lib/cfn"
-	"github.com/Blue-Pix/abc/lib/cfn/unusedExports"
+	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
@@ -27,7 +27,7 @@ func prepareCfnCmd(args []string) *cobra.Command {
 	cmd := NewCmd()
 	cmd.SetArgs(args)
 	cfnCmd := cfn.NewCmd()
-	unusedExportsCmd := unusedExports.NewCmd()
+	unusedExportsCmd := unused_exports.NewCmd()
 	cfnCmd.AddCommand(unusedExportsCmd)
 	cmd.AddCommand(cfnCmd)
 	return cmd
@@ -291,8 +291,8 @@ func TestExecute(t *testing.T) {
 	})
 
 	t.Run("cfn", func(t *testing.T) {
-		t.Run("unusedExports", func(t *testing.T) {
-			t.Run("", func(t *testing.T) {
+		t.Run("unused-exports", func(t *testing.T) {
+			t.Run("default", func(t *testing.T) {
 				args := []string{"cfn", "unused-exports"}
 				cmd := prepareCfnCmd(args)
 				b := bytes.NewBufferString("")

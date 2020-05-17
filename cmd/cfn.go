@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"github.com/Blue-Pix/abc/lib/cfn"
-	"github.com/Blue-Pix/abc/lib/cfn/unusedExports"
+	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 )
 
 var cfnCmd = cfn.NewCmd()
-var unusedExportsCmd = unusedExports.NewCmd()
+var unusedExportsCmd = unused_exports.NewCmd()
 
 func init() {
 	cfnCmd.SetOut(rootCmd.OutOrStdout())

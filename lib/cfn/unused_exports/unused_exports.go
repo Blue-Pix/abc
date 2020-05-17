@@ -1,4 +1,4 @@
-package unusedExports
+package unused_exports
 
 import (
 	"fmt"
