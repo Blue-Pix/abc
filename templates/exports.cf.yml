@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  PJ:
+    Description: project identifier
+    Type: String
+    Default: abc
+Resources:
+  Queue1:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Sub ${PJ}-queue1
+  Queue2:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Sub ${PJ}-queue2
+Outputs:
+  Queue1:
+    Value: !GetAtt Queue1.Arn
+    Export:
+      Name: !Sub ${PJ}-queue1-arn
+  Queue2:
+    Value: !GetAtt Queue2.Arn
+    Export:
+      Name: !Sub ${PJ}-queue2-arn
