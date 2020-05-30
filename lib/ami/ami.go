@@ -7,13 +7,14 @@ import (
 
 	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
+	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/spf13/cobra"
 )
 
 const PATH = "/aws/service/ami-amazon-linux-latest"
 
+// flag
 var (
 	version            string
 	virtualizationType string
@@ -21,6 +22,9 @@ var (
 	storage            string
 	minimal            string
 )
+
+// mockable
+var Client ssmiface.SSMAPI
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -49,7 +53,11 @@ You can query it with options below. `,
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	str, err := Run(cmd, args)
+	amis, err := FetchData(cmd, args)
+	if err != nil {
+		return err
+	}
+	str, err := toJSON(amis)
 	if err != nil {
 		return err
 	}
@@ -57,43 +65,23 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func Run(cmd *cobra.Command, args []string) (string, error) {
-	profile, err := cmd.Flags().GetString("profile")
+func FetchData(cmd *cobra.Command, args []string) ([]AMI, error) {
+	initClient(cmd)
+	amis, err := getAMIList()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	region, err := cmd.Flags().GetString("region")
-	if err != nil {
-		return "", err
-	}
-	sess := util.CreateSession(profile, region)
+	amis = filter(amis)
+	return amis, nil
+}
 
-	amis, err := getAMIList(sess)
-	if err != nil {
-		return "", err
+func initClient(cmd *cobra.Command) {
+	if Client == nil {
+		profile, _ := cmd.Flags().GetString("profile")
+		region, _ := cmd.Flags().GetString("region")
+		sess := util.CreateSession(profile, region)
+		Client = ssm.New(sess)
 	}
-
-	if version != "" {
-		amis = filterByVersion(version, amis)
-	}
-	if virtualizationType != "" {
-		amis = filterByVirtualizationType(virtualizationType, amis)
-	}
-	if arch != "" {
-		amis = filterByArch(arch, amis)
-	}
-	if storage != "" {
-		amis = filterByStorage(storage, amis)
-	}
-	if minimal != "" {
-		amis = filterByMinimal(minimal, amis)
-	}
-
-	str, err := toJSON(amis)
-	if err != nil {
-		return "", nil
-	}
-	return str, nil
 }
 
 type AMI struct {
@@ -107,17 +95,40 @@ type AMI struct {
 	Arn                string `json:"arn"`
 }
 
-func getParametersByPath(sess *session.Session, token *string, path string) (*ssm.GetParametersByPathOutput, error) {
-	service := ssm.New(sess)
+func getParametersByPath(token *string, path string) (*ssm.GetParametersByPathOutput, error) {
 	params := &ssm.GetParametersByPathInput{
 		NextToken: token,
 		Path:      aws.String(path),
 		Recursive: aws.Bool(true),
 	}
-	return service.GetParametersByPath(params)
+	return Client.GetParametersByPath(params)
 }
 
-func toAMI(parameter *ssm.Parameter) AMI {
+func getAMIList() ([]AMI, error) {
+	var parameters []*ssm.Parameter
+	var token *string = nil
+	var amis []AMI
+
+	for {
+		resp, err := getParametersByPath(token, PATH)
+		if err != nil {
+			return amis, err
+		}
+		parameters = append(parameters, resp.Parameters...)
+
+		if resp.NextToken == nil {
+			break
+		}
+		token = resp.NextToken
+	}
+
+	for _, parameter := range parameters {
+		amis = append(amis, ToAMI(parameter))
+	}
+	return amis, nil
+}
+
+func ToAMI(parameter *ssm.Parameter) AMI {
 	r := regexp.MustCompile(`^` + PATH + `\/([^\d]+)(\d)?-ami-(minimal\-)?(.+)-(.+)-(.+)$`)
 	list := r.FindAllStringSubmatch(aws.StringValue(parameter.Name), -1)
 	ami := AMI{
@@ -138,77 +149,28 @@ func toAMI(parameter *ssm.Parameter) AMI {
 	return ami
 }
 
-func getAMIList(sess *session.Session) ([]AMI, error) {
-	var parameters []*ssm.Parameter
-	var token *string = nil
-	var amis []AMI
-
-	for {
-		resp, err := getParametersByPath(sess, token, PATH)
-		if err != nil {
-			return amis, err
-		}
-		parameters = append(parameters, resp.Parameters...)
-
-		if resp.NextToken == nil {
-			break
-		}
-		token = resp.NextToken
-	}
-
-	for _, parameter := range parameters {
-		amis = append(amis, toAMI(parameter))
-	}
-	return amis, nil
-}
-
-func filterByVersion(version string, amis []AMI) []AMI {
+func filter(amis []AMI) []AMI {
 	var newAmis []AMI
 	for _, ami := range amis {
-		if version == ami.Version {
-			newAmis = append(newAmis, ami)
+		if version != "" && version != ami.Version {
+			continue
 		}
-	}
-	return newAmis
-}
-
-func filterByVirtualizationType(virtualizationType string, amis []AMI) []AMI {
-	var newAmis []AMI
-	for _, ami := range amis {
-		if virtualizationType == ami.VirtualizationType {
-			newAmis = append(newAmis, ami)
+		if virtualizationType != "" && virtualizationType != ami.VirtualizationType {
+			continue
 		}
-	}
-	return newAmis
-}
-
-func filterByArch(arch string, amis []AMI) []AMI {
-	var newAmis []AMI
-	for _, ami := range amis {
-		if arch == ami.Arch {
-			newAmis = append(newAmis, ami)
+		if arch != "" && arch != ami.Arch {
+			continue
 		}
-	}
-	return newAmis
-}
-
-func filterByStorage(storage string, amis []AMI) []AMI {
-	var newAmis []AMI
-	for _, ami := range amis {
-		if storage == ami.Storage {
-			newAmis = append(newAmis, ami)
+		if storage != "" && storage != ami.Storage {
+			continue
 		}
-	}
-	return newAmis
-}
-
-func filterByMinimal(minimal string, amis []AMI) []AMI {
-	var newAmis []AMI
-	for _, ami := range amis {
-		m, _ := strconv.ParseBool(minimal)
-		if m == ami.Minimal {
-			newAmis = append(newAmis, ami)
+		if minimal != "" {
+			m, _ := strconv.ParseBool(minimal)
+			if m != ami.Minimal {
+				continue
+			}
 		}
+		newAmis = append(newAmis, ami)
 	}
 	return newAmis
 }

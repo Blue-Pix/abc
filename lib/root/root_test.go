@@ -2,262 +2,111 @@ package root
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/Blue-Pix/abc/lib/ami"
 	"github.com/Blue-Pix/abc/lib/cfn"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
-	"github.com/spf13/cobra"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+	"github.com/aws/aws-sdk-go/service/ssm"
+	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/stretchr/testify/assert"
 )
 
-func prepareAmiCmd(args []string) *cobra.Command {
-	cmd := NewCmd()
-	cmd.SetArgs(args)
-	amiCmd := ami.NewCmd()
-	cmd.AddCommand(amiCmd)
-	return cmd
+type mockSSMClient struct {
+	ssmiface.SSMAPI
 }
 
-func prepareCfnCmd(args []string) *cobra.Command {
-	cmd := NewCmd()
-	cmd.SetArgs(args)
-	cfnCmd := cfn.NewCmd()
-	unusedExportsCmd := unused_exports.NewCmd()
-	cfnCmd.AddCommand(unusedExportsCmd)
-	cmd.AddCommand(cfnCmd)
-	return cmd
+func (client *mockSSMClient) GetParametersByPath(params *ssm.GetParametersByPathInput) (*ssm.GetParametersByPathOutput, error) {
+	return &ssm.GetParametersByPathOutput{
+		NextToken: nil,
+		Parameters: []*ssm.Parameter{
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-ebs"), Value: aws.String("ami-0ff5dca93155f5191"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2"), Value: aws.String("ami-0c3ae97724b825432"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-s3"), Value: aws.String("ami-03dd85055c8eb0ac9"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-s3")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-hvm-x86_64-s3"), Value: aws.String("ami-0e319478322617ce4"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-hvm-x86_64-s3")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-pv-x86_64-s3"), Value: aws.String("ami-042998a62d60bf1ca"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-pv-x86_64-s3")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-pv-x86_64-s3"), Value: aws.String("ami-0a3e892fee3e3a614"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-pv-x86_64-s3")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-arm64-gp2"), Value: aws.String("ami-08360a37d07f61f88"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-arm64-gp2")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-ebs"), Value: aws.String("ami-06aa6ba9dc39dc071"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"), Value: aws.String("ami-0f310fced6141e627"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn2-ami-minimal-hvm-arm64-ebs"), Value: aws.String("ami-07fe0b0aed2e82d18"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-minimal-hvm-arm64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-hvm-x86_64-ebs"), Value: aws.String("ami-01bb806b33a3b98a3"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-hvm-x86_64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-pv-x86_64-ebs"), Value: aws.String("ami-0690517f017a301c8"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-minimal-pv-x86_64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn-ami-pv-x86_64-ebs"), Value: aws.String("ami-0c920068a5c30b361"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn-ami-pv-x86_64-ebs")},
+			{Name: aws.String("/aws/service/ami-amazon-linux-latest/amzn2-ami-minimal-hvm-x86_64-ebs"), Value: aws.String("ami-03494c35f936e7fd7"), ARN: aws.String("arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-minimal-hvm-x86_64-ebs")},
+		},
+	}, nil
+}
+
+type mockCloudformationClient struct {
+	cloudformationiface.CloudFormationAPI
+}
+
+func (client *mockCloudformationClient) ListStacks(params *cloudformation.ListStacksInput) (*cloudformation.ListStacksOutput, error) {
+	return &cloudformation.ListStacksOutput{
+		NextToken: nil,
+		StackSummaries: []*cloudformation.StackSummary{
+			{StackId: aws.String("aaa"), StackName: aws.String("foo")},
+			{StackId: aws.String("bbb"), StackName: aws.String("bar")},
+			{StackId: aws.String("ccc"), StackName: aws.String("foobar")},
+		},
+	}, nil
+}
+
+func (client *mockCloudformationClient) ListExports(params *cloudformation.ListExportsInput) (*cloudformation.ListExportsOutput, error) {
+	return &cloudformation.ListExportsOutput{
+		NextToken: nil,
+		Exports: []*cloudformation.Export{
+			{Name: aws.String("foo_key1"), ExportingStackId: aws.String("aaa")},
+			{Name: aws.String("foo_key2"), ExportingStackId: aws.String("aaa")},
+			{Name: aws.String("bar_key1"), ExportingStackId: aws.String("bbb")},
+			{Name: aws.String("bar_key2"), ExportingStackId: aws.String("bbb")},
+		},
+	}, nil
+}
+
+func (client *mockCloudformationClient) ListImports(params *cloudformation.ListImportsInput) (*cloudformation.ListImportsOutput, error) {
+	switch aws.StringValue(params.ExportName) {
+	case "foo_key1":
+		return &cloudformation.ListImportsOutput{
+			NextToken: nil,
+			Imports: []*string{
+				aws.String("bar"),
+				aws.String("foobar"),
+			},
+		}, nil
+	case "bar_key2":
+		return &cloudformation.ListImportsOutput{
+			NextToken: nil,
+			Imports: []*string{
+				aws.String("foobar"),
+			},
+		}, nil
+	default:
+		return nil, awserr.New(
+			"ValidationError",
+			fmt.Sprintf("%s is not imported by any stack", aws.StringValue(params.ExportName)),
+			errors.New("hoge"),
+		)
+	}
 }
 
 func TestExecute(t *testing.T) {
 	t.Run("ami", func(t *testing.T) {
-		t.Run("query by --version", func(t *testing.T) {
-			args := []string{"ami", "--version", "2"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"version\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by -v", func(t *testing.T) {
-			args := []string{"ami", "-v", "1"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"version\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by --virtualization-type", func(t *testing.T) {
-			args := []string{"ami", "--virtualization-type", "hvm"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"virtualization_type\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by -V", func(t *testing.T) {
-			args := []string{"ami", "-V", "pv"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"virtualization_type\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by --arch", func(t *testing.T) {
-			args := []string{"ami", "--arch", "x86_64"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"arch\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by -a", func(t *testing.T) {
-			args := []string{"ami", "-a", "arm64"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"arch\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by --storage", func(t *testing.T) {
-			args := []string{"ami", "--storage", "gp2"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"storage\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by -s", func(t *testing.T) {
-			args := []string{"ami", "-s", "ebs"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"storage\":\"([^\"]+)\"")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by --minimal", func(t *testing.T) {
-			args := []string{"ami", "--minimal", "true"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"minimal\":([^\",]+),")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query by -m", func(t *testing.T) {
-			args := []string{"ami", "-m", "false"}
-			cmd := prepareAmiCmd(args)
-			b := bytes.NewBufferString("")
-			cmd.SetOut(b)
-			cmd.Execute()
-			out, err := ioutil.ReadAll(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			r := regexp.MustCompile("\"minimal\":([^\",]+),")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-			}
-		})
-
-		t.Run("query with full options", func(t *testing.T) {
+		t.Run("with shorthand options", func(t *testing.T) {
 			args := []string{"ami", "-v", "2", "-V", "hvm", "-a", "x86_64", "-s", "gp2", "-m", "false"}
-			cmd := prepareAmiCmd(args)
+			cmd := NewCmd()
+			cmd.SetArgs(args)
+			amiCmd := ami.NewCmd()
+			cmd.AddCommand(amiCmd)
+			ami.Client = &mockSSMClient{}
 			b := bytes.NewBufferString("")
 			cmd.SetOut(b)
 			cmd.Execute()
@@ -265,28 +114,9 @@ func TestExecute(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			r := regexp.MustCompile("\"version\":\"([^\"]+)\",\"virtualization_type\":\"([^\"]+)\",\"arch\":\"([^\"]+)\",\"storage\":\"([^\"]+)\",\"minimal\":([^\",]+),")
-			list := r.FindAllStringSubmatch(string(out), -1)
-			if len(list) == 0 {
-				t.Fatal("there is no much result")
-			}
-			for _, l := range list {
-				if l[1] != args[2] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[2], l[1]))
-				}
-				if l[2] != args[4] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[4], l[2]))
-				}
-				if l[3] != args[6] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[6], l[3]))
-				}
-				if l[4] != args[8] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[8], l[4]))
-				}
-				if l[5] != args[10] {
-					t.Fatal(fmt.Sprintf("expected: %s, actual: %s", args[10], l[5]))
-				}
-			}
+			expected := "[{\"os\":\"amzn\",\"version\":\"2\",\"virtualization_type\":\"hvm\",\"arch\":\"x86_64\",\"storage\":\"gp2\",\"minimal\":false,\"id\":\"ami-0f310fced6141e627\",\"arn\":\"arn:aws:ssm:ap-northeast-1::parameter/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2\"}]\n"
+			assert.Equal(t, expected, string(out))
+			assert.Nil(t, err)
 		})
 	})
 
@@ -294,7 +124,13 @@ func TestExecute(t *testing.T) {
 		t.Run("unused-exports", func(t *testing.T) {
 			t.Run("default", func(t *testing.T) {
 				args := []string{"cfn", "unused-exports"}
-				cmd := prepareCfnCmd(args)
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				cfnCmd := cfn.NewCmd()
+				unusedExportsCmd := unused_exports.NewCmd()
+				cfnCmd.AddCommand(unusedExportsCmd)
+				cmd.AddCommand(cfnCmd)
+				unused_exports.Client = &mockCloudformationClient{}
 				b := bytes.NewBufferString("")
 				cmd.SetOut(b)
 				cmd.Execute()
@@ -302,10 +138,9 @@ func TestExecute(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				list := strings.Split(string(out), "\n")
-				assert.Regexp(t, regexp.MustCompile(`^\.+$`), list[0])
-				assert.Equal(t, "name,exporting_stack", list[1])
-				assert.Regexp(t, regexp.MustCompile(`^.+,.+$`), list[2])
+				expected := "[{\"name\":\"bar_key1\",\"exporting_stack\":\"bar\"},{\"name\":\"foo_key2\",\"exporting_stack\":\"foo\"}]\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
 			})
 		})
 	})

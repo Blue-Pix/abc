@@ -108,10 +108,7 @@ Outputs:
 
 ```sh
 $ abc cfn unused-exports
-..
-name,exporting_stack
-abc-queue1-arn,abc-sample-stack
-abc-queue2-arn,abc-sample-stack
+[{"name":"abc-queue1-arn","exporting_stack":"abc-sample-stack"},{"name":"abc-queue2-arn","exporting_stack":"abc-sample-stack"}]
 ```
 
 # License

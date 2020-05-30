@@ -1,17 +1,20 @@
 package unused_exports
 
 import (
-	"fmt"
+	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
 	"github.com/spf13/cobra"
 )
+
+var Client cloudformationiface.CloudFormationAPI
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,7 +39,11 @@ Please configure your aws credentials with following policies.
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	str, err := Run(cmd, args)
+	unused_exports, err := FetchData(cmd, args)
+	if err != nil {
+		return err
+	}
+	str, err := toJSON(unused_exports)
 	if err != nil {
 		return err
 	}
@@ -44,49 +51,48 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func Run(cmd *cobra.Command, args []string) (string, error) {
-	profile, err := cmd.Flags().GetString("profile")
-	if err != nil {
-		return "", err
-	}
-	region, err := cmd.Flags().GetString("region")
-	if err != nil {
-		return "", err
-	}
-	sess := util.CreateSession(profile, region)
+func FetchData(cmd *cobra.Command, args []string) ([]UnusedExport, error) {
+	initClient(cmd)
 
 	stacks := make(map[string]string)
-	if err := listStacks(sess, nil, stacks); err != nil {
-		return "", err
+	if err := listStacks(nil, stacks); err != nil {
+		return nil, err
 	}
 	exports := make(map[string]string)
-	if err := listExports(sess, nil, exports); err != nil {
-		return "", err
+	if err := listExports(nil, exports); err != nil {
+		return nil, err
 	}
-
-	var csv []string
-	csv = append(csv, "name,exporting_stack")
-	for key, _ := range exports {
-		cmd.Print(".")
-		var result []string
-		if err := listImports(sess, key, nil, &result); err != nil {
-			return "", err
-		}
-		if len(result) == 0 {
-			csv = append(csv, fmt.Sprintf("%s,%s", key, stacks[exports[key]]))
-		}
+	names, err := selectUnusedExportName(exports)
+	if err != nil {
+		return nil, err
 	}
-	cmd.Print("\n")
-	return strings.Join(csv, "\n"), nil
+	var unused_exports []UnusedExport
+	for _, name := range names {
+		unused_exports = append(unused_exports, UnusedExport{Name: name, ExportingStack: stacks[exports[name]]})
+	}
+	return unused_exports, nil
 }
 
-func listStacks(sess *session.Session, token *string, result map[string]string) error {
+func initClient(cmd *cobra.Command) {
+	if Client == nil {
+		profile, _ := cmd.Flags().GetString("profile")
+		region, _ := cmd.Flags().GetString("region")
+		sess := util.CreateSession(profile, region)
+		Client = cloudformation.New(sess)
+	}
+}
+
+type UnusedExport struct {
+	Name           string `json:"name"`
+	ExportingStack string `json:"exporting_stack"`
+}
+
+func listStacks(token *string, result map[string]string) error {
 	time.Sleep(1 * time.Second)
-	service := cloudformation.New(sess)
 	params := &cloudformation.ListStacksInput{
 		NextToken: token,
 	}
-	resp, err := service.ListStacks(params)
+	resp, err := Client.ListStacks(params)
 	if err != nil {
 		return err
 	}
@@ -94,20 +100,19 @@ func listStacks(sess *session.Session, token *string, result map[string]string) 
 		result[aws.StringValue(stack.StackId)] = aws.StringValue(stack.StackName)
 	}
 	if resp.NextToken != nil {
-		if err = listStacks(sess, resp.NextToken, result); err != nil {
+		if err = listStacks(resp.NextToken, result); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func listExports(sess *session.Session, token *string, result map[string]string) error {
+func listExports(token *string, result map[string]string) error {
 	time.Sleep(1 * time.Second)
-	service := cloudformation.New(sess)
 	params := &cloudformation.ListExportsInput{
 		NextToken: token,
 	}
-	resp, err := service.ListExports(params)
+	resp, err := Client.ListExports(params)
 	if err != nil {
 		return err
 	}
@@ -115,36 +120,62 @@ func listExports(sess *session.Session, token *string, result map[string]string)
 		result[aws.StringValue(export.Name)] = aws.StringValue(export.ExportingStackId)
 	}
 	if resp.NextToken != nil {
-		if err = listExports(sess, resp.NextToken, result); err != nil {
+		if err = listExports(resp.NextToken, result); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func listImports(sess *session.Session, exportName string, token *string, result *[]string) error {
+func listImports(exportName string, token *string, result []string) ([]string, error) {
 	time.Sleep(1 * time.Second)
-	service := cloudformation.New(sess)
 	params := &cloudformation.ListImportsInput{
 		NextToken:  token,
 		ExportName: aws.String(exportName),
 	}
-	resp, err := service.ListImports(params)
+	resp, err := Client.ListImports(params)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "ValidationError" && strings.Contains(aerr.Message(), "is not imported by any stack") {
-				return nil
+				return nil, nil
 			}
 		}
-		return err
+		return nil, err
 	}
+	var new_result []string
 	for _, _import := range resp.Imports {
-		*result = append(*result, aws.StringValue(_import))
+		new_result = append(result, aws.StringValue(_import))
 	}
 	if resp.NextToken != nil {
-		if err = listImports(sess, exportName, resp.NextToken, result); err != nil {
-			return err
+		new_result2, err := listImports(exportName, resp.NextToken, new_result)
+		if err != nil {
+			return nil, err
+		}
+		new_result = append(new_result, new_result2...)
+	}
+	return new_result, nil
+}
+
+func selectUnusedExportName(exports map[string]string) ([]string, error) {
+	var keys []string
+	for key := range exports {
+		result, err := listImports(key, nil, []string{})
+		if err != nil {
+			return nil, err
+		}
+		if len(result) == 0 {
+			keys = append(keys, key)
 		}
 	}
-	return nil
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func toJSON(exports []UnusedExport) (string, error) {
+	jsonBytes, err := json.Marshal(exports)
+	if err != nil {
+		return "", err
+	}
+	jsonStr := string(jsonBytes)
+	return jsonStr, nil
 }
