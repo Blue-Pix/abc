@@ -40,7 +40,7 @@ Please configure your aws credential which has required policy.
 By default, this returns serveral type of amis.
 You can query it with options below. `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := Run(cmd, args)
+			err := run(cmd, args)
 			return err
 		},
 	}
@@ -52,19 +52,27 @@ You can query it with options below. `,
 	return cmd
 }
 
-func Run(cmd *cobra.Command, args []string) error {
-	initClient(cmd)
-	amis, err := getAMIList()
+func run(cmd *cobra.Command, args []string) error {
+	amis, err := FetchData(cmd, args)
 	if err != nil {
 		return err
 	}
-	amis = filter(amis)
 	str, err := toJSON(amis)
 	if err != nil {
 		return err
 	}
 	cmd.Println(str)
 	return nil
+}
+
+func FetchData(cmd *cobra.Command, args []string) ([]AMI, error) {
+	initClient(cmd)
+	amis, err := getAMIList()
+	if err != nil {
+		return nil, err
+	}
+	amis = filter(amis)
+	return amis, nil
 }
 
 func initClient(cmd *cobra.Command) {
@@ -115,12 +123,12 @@ func getAMIList() ([]AMI, error) {
 	}
 
 	for _, parameter := range parameters {
-		amis = append(amis, toAMI(parameter))
+		amis = append(amis, ToAMI(parameter))
 	}
 	return amis, nil
 }
 
-func toAMI(parameter *ssm.Parameter) AMI {
+func ToAMI(parameter *ssm.Parameter) AMI {
 	r := regexp.MustCompile(`^` + PATH + `\/([^\d]+)(\d)?-ami-(minimal\-)?(.+)-(.+)-(.+)$`)
 	list := r.FindAllStringSubmatch(aws.StringValue(parameter.Name), -1)
 	ami := AMI{
