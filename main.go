@@ -18,7 +18,7 @@ package main
 import "github.com/Blue-Pix/abc/cmd"
 
 var (
-	Version = "0.1.1"
+	Version = "0.3.0"
 )
 
 func main() {
