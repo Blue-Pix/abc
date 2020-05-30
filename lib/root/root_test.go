@@ -2,18 +2,20 @@ package root
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io/ioutil"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/Blue-Pix/abc/lib/ami"
 	"github.com/Blue-Pix/abc/lib/cfn"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,14 +45,57 @@ func (client *mockSSMClient) GetParametersByPath(params *ssm.GetParametersByPath
 	}, nil
 }
 
-func prepareCfnCmd(args []string) *cobra.Command {
-	cmd := NewCmd()
-	cmd.SetArgs(args)
-	cfnCmd := cfn.NewCmd()
-	unusedExportsCmd := unused_exports.NewCmd()
-	cfnCmd.AddCommand(unusedExportsCmd)
-	cmd.AddCommand(cfnCmd)
-	return cmd
+type mockCloudformationClient struct {
+	cloudformationiface.CloudFormationAPI
+}
+
+func (client *mockCloudformationClient) ListStacks(params *cloudformation.ListStacksInput) (*cloudformation.ListStacksOutput, error) {
+	return &cloudformation.ListStacksOutput{
+		NextToken: nil,
+		StackSummaries: []*cloudformation.StackSummary{
+			{StackId: aws.String("aaa"), StackName: aws.String("foo")},
+			{StackId: aws.String("bbb"), StackName: aws.String("bar")},
+			{StackId: aws.String("ccc"), StackName: aws.String("foobar")},
+		},
+	}, nil
+}
+
+func (client *mockCloudformationClient) ListExports(params *cloudformation.ListExportsInput) (*cloudformation.ListExportsOutput, error) {
+	return &cloudformation.ListExportsOutput{
+		NextToken: nil,
+		Exports: []*cloudformation.Export{
+			{Name: aws.String("foo_key1"), ExportingStackId: aws.String("aaa")},
+			{Name: aws.String("foo_key2"), ExportingStackId: aws.String("aaa")},
+			{Name: aws.String("bar_key1"), ExportingStackId: aws.String("bbb")},
+			{Name: aws.String("bar_key2"), ExportingStackId: aws.String("bbb")},
+		},
+	}, nil
+}
+
+func (client *mockCloudformationClient) ListImports(params *cloudformation.ListImportsInput) (*cloudformation.ListImportsOutput, error) {
+	switch aws.StringValue(params.ExportName) {
+	case "foo_key1":
+		return &cloudformation.ListImportsOutput{
+			NextToken: nil,
+			Imports: []*string{
+				aws.String("bar"),
+				aws.String("foobar"),
+			},
+		}, nil
+	case "bar_key2":
+		return &cloudformation.ListImportsOutput{
+			NextToken: nil,
+			Imports: []*string{
+				aws.String("foobar"),
+			},
+		}, nil
+	default:
+		return nil, awserr.New(
+			"ValidationError",
+			fmt.Sprintf("%s is not imported by any stack", aws.StringValue(params.ExportName)),
+			errors.New("hoge"),
+		)
+	}
 }
 
 func TestExecute(t *testing.T) {
@@ -79,7 +124,13 @@ func TestExecute(t *testing.T) {
 		t.Run("unused-exports", func(t *testing.T) {
 			t.Run("default", func(t *testing.T) {
 				args := []string{"cfn", "unused-exports"}
-				cmd := prepareCfnCmd(args)
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				cfnCmd := cfn.NewCmd()
+				unusedExportsCmd := unused_exports.NewCmd()
+				cfnCmd.AddCommand(unusedExportsCmd)
+				cmd.AddCommand(cfnCmd)
+				unused_exports.Client = &mockCloudformationClient{}
 				b := bytes.NewBufferString("")
 				cmd.SetOut(b)
 				cmd.Execute()
@@ -87,10 +138,9 @@ func TestExecute(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				list := strings.Split(string(out), "\n")
-				assert.Regexp(t, regexp.MustCompile(`^\.+$`), list[0])
-				assert.Equal(t, "name,exporting_stack", list[1])
-				assert.Regexp(t, regexp.MustCompile(`^.+,.+$`), list[2])
+				expected := "[{\"name\":\"bar_key1\",\"exporting_stack\":\"bar\"},{\"name\":\"foo_key2\",\"exporting_stack\":\"foo\"}]\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
 			})
 		})
 	})
