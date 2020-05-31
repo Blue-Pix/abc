@@ -1,7 +1,6 @@
 package purge_stack
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -16,6 +15,10 @@ import (
 
 var CfnClient cloudformationiface.CloudFormationAPI
 var EcrClient ecriface.ECRAPI
+
+var (
+	stackName string
+)
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,75 +41,47 @@ Please configure your aws credentials with following policies.
 			return err
 		},
 	}
+	cmd.Flags().StringVar(&stackName, "stack-name", "", "stack name to delete")
+	cmd.MarkFlagRequired("stack-name")
 	return cmd
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	data, err := FetchData(cmd, args)
-	if err != nil {
+	if err := ExecPurgeStack(cmd, args); err != nil {
 		return err
 	}
-	str, err := toJSON(data)
-	if err != nil {
-		return err
-	}
-	cmd.Println(str)
+	cmd.Println("Perform delete-stack is in progress asynchronously.\nPlease check deletion status by yourself.")
 	return nil
 }
 
-func FetchData(cmd *cobra.Command, args []string) ([]string, error) {
+func ExecPurgeStack(cmd *cobra.Command, args []string) error {
 	initClient(cmd)
-
-	params := &cloudformation.ListStackResourcesInput{
-		StackName: aws.String("stack-with-ecr"),
-	}
-	resp, err := CfnClient.ListStackResources(params)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range resp.StackResourceSummaries {
-		if aws.StringValue(r.ResourceType) == "AWS::ECR::Repository" {
-			params2 := &ecr.DescribeImagesInput{
-				MaxResults:     aws.Int64(1000),
-				RepositoryName: r.PhysicalResourceId,
-			}
-			resp2, err := EcrClient.DescribeImages(params2)
-			if err != nil {
-				return nil, err
-			}
-			var images []*ecr.ImageIdentifier
-			for _, i := range resp2.ImageDetails {
-				images = append(images, &ecr.ImageIdentifier{
-					ImageDigest: i.ImageDigest,
-				})
-			}
-			params3 := &ecr.BatchDeleteImageInput{
-				ImageIds:       images,
-				RepositoryName: r.PhysicalResourceId,
-			}
-			if len(images) == 0 {
-				continue
-			}
-			resp3, err := EcrClient.BatchDeleteImage(params3)
-			if err != nil {
-				return nil, err
-			}
-			if len(resp3.Failures) > 0 {
-				cmd.Println(resp3.Failures)
-				return nil, errors.New(fmt.Sprintf("failed to delete images of %s", aws.StringValue(r.PhysicalResourceId)))
-			}
+	resources, err := listEcrResources()
+	for _, resource := range resources {
+		repositoryName := resource.PhysicalResourceId
+		images, err := listImageDigests(repositoryName)
+		if err != nil {
+			return err
 		}
+		if len(images) == 0 {
+			continue
+		}
+		failures, err := deleteImages(images, repositoryName)
+		if err != nil {
+			return err
+		}
+		if len(failures) > 0 {
+			cmd.Println(failures)
+			return errors.New(fmt.Sprintf("failed to delete images of %s", aws.StringValue(repositoryName)))
+		}
+		cmd.Println(fmt.Sprintf("All images in %s successfully deleted.", aws.StringValue(repositoryName)))
 	}
 
-	params4 := &cloudformation.DeleteStackInput{
-		StackName: aws.String("stack-with-ecr"),
-	}
-	_, err4 := CfnClient.DeleteStack(params4)
-	if err4 != nil {
-		return nil, err
+	if err = deleteStack(stackName); err != nil {
+		return err
 	}
 
-	return []string{}, nil
+	return nil
 }
 
 func initClient(cmd *cobra.Command) {
@@ -122,11 +97,60 @@ func initClient(cmd *cobra.Command) {
 	}
 }
 
-func toJSON(data []string) (string, error) {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return "", err
+func listEcrResources() ([]*cloudformation.StackResourceSummary, error) {
+	params := &cloudformation.ListStackResourcesInput{
+		StackName: aws.String(stackName),
 	}
-	jsonStr := string(jsonBytes)
-	return jsonStr, nil
+	resp, err := CfnClient.ListStackResources(params)
+	if err != nil {
+		return nil, err
+	}
+	var ecrs []*cloudformation.StackResourceSummary
+	for _, r := range resp.StackResourceSummaries {
+		if aws.StringValue(r.ResourceType) == "AWS::ECR::Repository" {
+			ecrs = append(ecrs, r)
+		}
+	}
+	return ecrs, nil
+}
+
+func listImageDigests(repositoryName *string) ([]*ecr.ImageIdentifier, error) {
+	params := &ecr.DescribeImagesInput{
+		MaxResults:     aws.Int64(1000),
+		RepositoryName: repositoryName,
+	}
+	resp, err := EcrClient.DescribeImages(params)
+	if err != nil {
+		return nil, err
+	}
+	var images []*ecr.ImageIdentifier
+	for _, i := range resp.ImageDetails {
+		images = append(images, &ecr.ImageIdentifier{
+			ImageDigest: i.ImageDigest,
+		})
+	}
+	return images, nil
+}
+
+func deleteImages(images []*ecr.ImageIdentifier, repositoryName *string) ([]*ecr.ImageFailure, error) {
+	params := &ecr.BatchDeleteImageInput{
+		ImageIds:       images,
+		RepositoryName: repositoryName,
+	}
+	resp, err := EcrClient.BatchDeleteImage(params)
+	if err != nil {
+		return resp.Failures, err
+	}
+	return resp.Failures, nil
+}
+
+func deleteStack(stackName string) error {
+	params := &cloudformation.DeleteStackInput{
+		StackName: aws.String(stackName),
+	}
+	_, err := CfnClient.DeleteStack(params)
+	if err != nil {
+		return err
+	}
+	return nil
 }
