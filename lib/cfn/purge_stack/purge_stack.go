@@ -98,6 +98,14 @@ func FetchData(cmd *cobra.Command, args []string) ([]string, error) {
 		}
 	}
 
+	params4 := &cloudformation.DeleteStackInput{
+		StackName: aws.String("stack-with-ecr"),
+	}
+	_, err4 := CfnClient.DeleteStack(params4)
+	if err4 != nil {
+		return nil, err
+	}
+
 	return []string{}, nil
 }
 
