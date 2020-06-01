@@ -56,10 +56,13 @@ func run(cmd *cobra.Command, args []string) error {
 
 func ExecPurgeStack(cmd *cobra.Command, args []string) error {
 	initClient(cmd)
-	resources, err := listEcrResources()
+	resources, err := listEcrResources(nil, []*cloudformation.StackResourceSummary{})
+	if err != nil {
+		return err
+	}
 	for _, resource := range resources {
 		repositoryName := resource.PhysicalResourceId
-		images, err := listImageDigests(repositoryName)
+		images, err := listImageDigests(nil, repositoryName, []*ecr.ImageIdentifier{})
 		if err != nil {
 			return err
 		}
@@ -97,25 +100,32 @@ func initClient(cmd *cobra.Command) {
 	}
 }
 
-func listEcrResources() ([]*cloudformation.StackResourceSummary, error) {
+func listEcrResources(token *string, ecrs []*cloudformation.StackResourceSummary) ([]*cloudformation.StackResourceSummary, error) {
 	params := &cloudformation.ListStackResourcesInput{
+		NextToken: token,
 		StackName: aws.String(stackName),
 	}
 	resp, err := CfnClient.ListStackResources(params)
 	if err != nil {
 		return nil, err
 	}
-	var ecrs []*cloudformation.StackResourceSummary
 	for _, r := range resp.StackResourceSummaries {
 		if aws.StringValue(r.ResourceType) == "AWS::ECR::Repository" {
 			ecrs = append(ecrs, r)
 		}
 	}
+	if resp.NextToken != nil {
+		ecrs, err = listEcrResources(resp.NextToken, ecrs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return ecrs, nil
 }
 
-func listImageDigests(repositoryName *string) ([]*ecr.ImageIdentifier, error) {
+func listImageDigests(token *string, repositoryName *string, images []*ecr.ImageIdentifier) ([]*ecr.ImageIdentifier, error) {
 	params := &ecr.DescribeImagesInput{
+		NextToken:      token,
 		MaxResults:     aws.Int64(1000),
 		RepositoryName: repositoryName,
 	}
@@ -123,11 +133,16 @@ func listImageDigests(repositoryName *string) ([]*ecr.ImageIdentifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	var images []*ecr.ImageIdentifier
 	for _, i := range resp.ImageDetails {
 		images = append(images, &ecr.ImageIdentifier{
 			ImageDigest: i.ImageDigest,
 		})
+	}
+	if resp.NextToken != nil {
+		images, err = listImageDigests(resp.NextToken, repositoryName, images)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return images, nil
 }
