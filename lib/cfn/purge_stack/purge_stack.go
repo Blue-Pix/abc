@@ -154,7 +154,7 @@ func deleteImages(images []*ecr.ImageIdentifier, repositoryName *string) ([]*ecr
 	}
 	resp, err := EcrClient.BatchDeleteImage(params)
 	if err != nil {
-		return resp.Failures, err
+		return nil, err
 	}
 	return resp.Failures, nil
 }
