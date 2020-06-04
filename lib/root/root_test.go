@@ -9,6 +9,7 @@ import (
 
 	"github.com/Blue-Pix/abc/lib/ami"
 	"github.com/Blue-Pix/abc/lib/cfn"
+	"github.com/Blue-Pix/abc/lib/cfn/purge_stack"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -139,6 +140,36 @@ func TestExecute(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := "[{\"name\":\"bar_key1\",\"exporting_stack\":\"bar\"},{\"name\":\"foo_key2\",\"exporting_stack\":\"foo\"}]\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
+			})
+		})
+
+		t.Run("purge-stack", func(t *testing.T) {
+			t.Run("success", func(t *testing.T) {
+				stackName := "foo"
+				args := []string{"cfn", "purge-stack", "--stack-name", stackName}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				cfnCmd := cfn.NewCmd()
+				purgeStackCmd := purge_stack.NewCmd()
+				cfnCmd.AddCommand(purgeStackCmd)
+				cmd.AddCommand(cfnCmd)
+
+				cm := &purge_stack.MockCfnClient{}
+				em := &purge_stack.MockEcrClient{}
+				purge_stack.SetMockDefaultBehaviour(cm, em)
+				purge_stack.CfnClient = cm
+				purge_stack.EcrClient = em
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				cmd.Execute()
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := "All images in ecr1 successfully deleted.\nPerform delete-stack is in progress asynchronously.\nPlease check deletion status by yourself.\n"
 				assert.Equal(t, expected, string(out))
 				assert.Nil(t, err)
 			})
