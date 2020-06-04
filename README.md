@@ -9,6 +9,7 @@ It wraps, pipes and extends AWS API.
 - [Usage](#usage)
   - [abc ami](#abc-ami)
   - [abc cfn unused-exports](#abc-cfn-unused-exports)
+  - [abc cfn purge-stack](#abc-cfn-purge-stack)
 - [License](#license)
 - [Contributing](#contributing)
 
@@ -109,6 +110,22 @@ Outputs:
 ```sh
 $ abc cfn unused-exports
 [{"name":"abc-queue1-arn","exporting_stack":"abc-sample-stack"},{"name":"abc-queue2-arn","exporting_stack":"abc-sample-stack"}]
+```
+
+## `abc cfn purge-stack`
+
+Force Delete for Cloudformation's stack.  
+AWS does not support for deletion of some resources, such as ECR repostiory including images.  
+This command pre-performs image cleanup, and then stack deletion.  
+There may be other use cases, but currently only ECR deletion supported.  
+
+**Example:**
+
+```sh
+$ abc cfn purge-stack --stack-name abc-sample-stack
+All images in abc-ecr-1 successfully deleted.
+Perform delete-stack is in progress asynchronously.
+Please check deletion status by yourself.
 ```
 
 # License
