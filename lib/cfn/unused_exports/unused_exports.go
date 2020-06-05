@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Client cloudformationiface.CloudFormationAPI
+var CfnClient cloudformationiface.CloudFormationAPI
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -74,11 +74,11 @@ func FetchData(cmd *cobra.Command, args []string) ([]UnusedExport, error) {
 }
 
 func initClient(cmd *cobra.Command) {
-	if Client == nil {
+	if CfnClient == nil {
 		profile, _ := cmd.Flags().GetString("profile")
 		region, _ := cmd.Flags().GetString("region")
 		sess := util.CreateSession(profile, region)
-		Client = cloudformation.New(sess)
+		CfnClient = cloudformation.New(sess)
 	}
 }
 
@@ -92,7 +92,7 @@ func listStacks(token *string, result map[string]string) error {
 	params := &cloudformation.ListStacksInput{
 		NextToken: token,
 	}
-	resp, err := Client.ListStacks(params)
+	resp, err := CfnClient.ListStacks(params)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func listExports(token *string, result map[string]string) error {
 	params := &cloudformation.ListExportsInput{
 		NextToken: token,
 	}
-	resp, err := Client.ListExports(params)
+	resp, err := CfnClient.ListExports(params)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func listImports(exportName string, token *string, result []string) ([]string, e
 		NextToken:  token,
 		ExportName: aws.String(exportName),
 	}
-	resp, err := Client.ListImports(params)
+	resp, err := CfnClient.ListImports(params)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "ValidationError" && strings.Contains(aerr.Message(), "is not imported by any stack") {
