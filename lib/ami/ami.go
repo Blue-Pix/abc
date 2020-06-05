@@ -24,7 +24,7 @@ var (
 )
 
 // mockable
-var Client ssmiface.SSMAPI
+var SsmClient ssmiface.SSMAPI
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -76,11 +76,11 @@ func FetchData(cmd *cobra.Command, args []string) ([]AMI, error) {
 }
 
 func initClient(cmd *cobra.Command) {
-	if Client == nil {
+	if SsmClient == nil {
 		profile, _ := cmd.Flags().GetString("profile")
 		region, _ := cmd.Flags().GetString("region")
 		sess := util.CreateSession(profile, region)
-		Client = ssm.New(sess)
+		SsmClient = ssm.New(sess)
 	}
 }
 
@@ -101,7 +101,7 @@ func getParametersByPath(token *string, path string) (*ssm.GetParametersByPathOu
 		Path:      aws.String(path),
 		Recursive: aws.Bool(true),
 	}
-	return Client.GetParametersByPath(params)
+	return SsmClient.GetParametersByPath(params)
 }
 
 func getAMIList() ([]AMI, error) {
