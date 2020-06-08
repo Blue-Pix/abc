@@ -9,6 +9,8 @@ import (
 	"github.com/Blue-Pix/abc/lib/cfn"
 	"github.com/Blue-Pix/abc/lib/cfn/purge_stack"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
+	"github.com/Blue-Pix/abc/lib/lambda"
+	"github.com/Blue-Pix/abc/lib/lambda/stats"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -110,6 +112,57 @@ func TestExecute(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := "All images in ecr1 successfully deleted.\nPerform delete-stack is in progress asynchronously.\nPlease check deletion status by yourself.\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
+			})
+		})
+	})
+
+	t.Run("lambda", func(t *testing.T) {
+		t.Run("stats", func(t *testing.T) {
+			t.Run("success", func(t *testing.T) {
+				args := []string{"lambda", "stats"}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				lambdaCmd := lambda.NewCmd()
+				statsCmd := stats.NewCmd()
+				lambdaCmd.AddCommand(statsCmd)
+				cmd.AddCommand(lambdaCmd)
+
+				lm := &stats.MockLambdaClient{}
+				stats.SetMockDefaultBehaviour(lm)
+				stats.LambdaClient = lm
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				cmd.Execute()
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := `|    RUNTIME     | COUNT |
+|----------------|-------|
+| dotnetcore1.0  |     1 |
+| dotnetcore2.0  |     1 |
+| dotnetcore2.1  |     1 |
+| dotnetcore3.1  |     1 |
+| go1.x          |     4 |
+| java11         |     1 |
+| java8          |     1 |
+| nodejs         |     2 |
+| nodejs10.x     |     1 |
+| nodejs12.x     |     1 |
+| nodejs4.3      |     1 |
+| nodejs4.3-edge |     1 |
+| nodejs6.10     |     1 |
+| nodejs8.10     |     1 |
+| provided       |     6 |
+| python3.6      |     1 |
+| python3.7      |     1 |
+| python3.8      |     3 |
+| ruby2.5        |     1 |
+| ruby2.7        |     1 |
+`
 				assert.Equal(t, expected, string(out))
 				assert.Nil(t, err)
 			})
