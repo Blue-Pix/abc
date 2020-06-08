@@ -11,7 +11,9 @@ import (
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 	"github.com/Blue-Pix/abc/lib/lambda"
 	"github.com/Blue-Pix/abc/lib/lambda/stats"
+	awsLambda "github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestExecute(t *testing.T) {
@@ -140,29 +142,57 @@ func TestExecute(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				expected := `|    RUNTIME     | COUNT |
-|----------------|-------|
-| dotnetcore1.0  |     1 |
-| dotnetcore2.0  |     1 |
-| dotnetcore2.1  |     1 |
-| dotnetcore3.1  |     1 |
-| go1.x          |     4 |
-| java11         |     1 |
-| java8          |     1 |
-| nodejs         |     2 |
-| nodejs10.x     |     1 |
-| nodejs12.x     |     1 |
-| nodejs4.3      |     1 |
-| nodejs4.3-edge |     1 |
-| nodejs6.10     |     1 |
-| nodejs8.10     |     1 |
-| provided       |     6 |
-| python3.6      |     1 |
-| python3.7      |     1 |
-| python3.8      |     3 |
-| ruby2.5        |     1 |
-| ruby2.7        |     1 |
-`
+				expected := "|           RUNTIME            | COUNT |\n"
+				expected += "|------------------------------|-------|\n"
+				expected += "| \x1b[91mdotnetcore1.0（Deprecated）\x1b[0m  |     1 |\n"
+				expected += "| \x1b[91mdotnetcore2.0（Deprecated）\x1b[0m  |     1 |\n"
+				expected += "| dotnetcore2.1                |     1 |\n"
+				expected += "| dotnetcore3.1                |     1 |\n"
+				expected += "| go1.x                        |     4 |\n"
+				expected += "| java11                       |     1 |\n"
+				expected += "| java8                        |     1 |\n"
+				expected += "| \x1b[91mnodejs（Deprecated）\x1b[0m         |     2 |\n"
+				expected += "| nodejs10.x                   |     1 |\n"
+				expected += "| nodejs12.x                   |     1 |\n"
+				expected += "| \x1b[91mnodejs4.3（Deprecated）\x1b[0m      |     1 |\n"
+				expected += "| \x1b[91mnodejs4.3-edge（Deprecated）\x1b[0m |     1 |\n"
+				expected += "| \x1b[91mnodejs6.10（Deprecated）\x1b[0m     |     1 |\n"
+				expected += "| \x1b[91mnodejs8.10（Deprecated）\x1b[0m     |     1 |\n"
+				expected += "| provided                     |     6 |\n"
+				expected += "| python3.6                    |     1 |\n"
+				expected += "| python3.7                    |     1 |\n"
+				expected += "| python3.8                    |     3 |\n"
+				expected += "| ruby2.5                      |     1 |\n"
+				expected += "| ruby2.7                      |     1 |\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
+			})
+
+			t.Run("no function exists", func(t *testing.T) {
+				args := []string{"lambda", "stats"}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				lambdaCmd := lambda.NewCmd()
+				statsCmd := stats.NewCmd()
+				lambdaCmd.AddCommand(statsCmd)
+				cmd.AddCommand(lambdaCmd)
+
+				lm := &stats.MockLambdaClient{}
+				lm.On("ListFunctions", mock.AnythingOfType("*lambda.ListFunctionsInput")).Return(&awsLambda.ListFunctionsOutput{
+					NextMarker: nil,
+					Functions:  []*awsLambda.FunctionConfiguration{},
+				}, nil)
+				stats.SetMockDefaultBehaviour(lm)
+				stats.LambdaClient = lm
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				cmd.Execute()
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := "no function found"
 				assert.Equal(t, expected, string(out))
 				assert.Nil(t, err)
 			})

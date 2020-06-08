@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,7 +47,7 @@ func run(cmd *cobra.Command, args []string) error {
 	} else {
 		str = Output(data)
 	}
-	cmd.Println(str)
+	cmd.Print(str)
 	return nil
 }
 
@@ -123,8 +124,25 @@ func Output(count map[string][]string) string {
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
 	for _, k := range keys {
-		table.Append([]string{k, strconv.Itoa(len(count[k]))})
+		if isDeprecatedRuntime(k) {
+			table.Append([]string{fmt.Sprintf("\x1b[91m%s（Deprecated）\x1b[0m", k), strconv.Itoa(len(count[k]))})
+		} else {
+			table.Append([]string{k, strconv.Itoa(len(count[k]))})
+		}
 	}
 	table.Render()
 	return tableString.String()
+}
+
+var deprecatedRuntimes = [7]string{
+	"nodejs8.10", "nodejs6.10", "nodejs4.3", "nodejs4.3-edge", "nodejs", "dotnetcore2.0", "dotnetcore1.0",
+}
+
+func isDeprecatedRuntime(runtime string) bool {
+	for _, r := range deprecatedRuntimes {
+		if runtime == r {
+			return true
+		}
+	}
+	return false
 }
