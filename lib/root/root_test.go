@@ -122,7 +122,7 @@ func TestExecute(t *testing.T) {
 
 	t.Run("lambda", func(t *testing.T) {
 		t.Run("stats", func(t *testing.T) {
-			t.Run("success", func(t *testing.T) {
+			t.Run("success with no option", func(t *testing.T) {
 				args := []string{"lambda", "stats"}
 				cmd := NewCmd()
 				cmd.SetArgs(args)
@@ -164,6 +164,61 @@ func TestExecute(t *testing.T) {
 				expected += "| python3.8                    |     3 |\n"
 				expected += "| ruby2.5                      |     1 |\n"
 				expected += "| ruby2.7                      |     1 |\n"
+				assert.Equal(t, expected, string(out))
+				assert.Nil(t, err)
+			})
+
+			t.Run("success with verbose option", func(t *testing.T) {
+				args := []string{"lambda", "stats", "--verbose"}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				lambdaCmd := lambda.NewCmd()
+				statsCmd := stats.NewCmd()
+				lambdaCmd.AddCommand(statsCmd)
+				cmd.AddCommand(lambdaCmd)
+
+				lm := &stats.MockLambdaClient{}
+				stats.SetMockDefaultBehaviour(lm)
+				stats.LambdaClient = lm
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				cmd.Execute()
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := "|           RUNTIME            | COUNT |           FUNCTIONS            |\n"
+				expected += "|------------------------------|-------|--------------------------------|\n"
+				expected += "| \x1b[91mdotnetcore1.0（Deprecated）\x1b[0m  |     1 | dotnet1.0-func-1               |\n"
+				expected += "| \x1b[91mdotnetcore2.0（Deprecated）\x1b[0m  |     1 | dotnet2.0-func-1               |\n"
+				expected += "| dotnetcore2.1                |     1 | dotnet2.1-func-1               |\n"
+				expected += "| dotnetcore3.1                |     1 | dotnet3.1-func-1               |\n"
+				expected += "| go1.x                        |     4 | go1-func-1, go1-func-2,        |\n"
+				expected += "|                              |       | go1-func-3, go1-func-4         |\n"
+				expected += "| java11                       |     1 | java11-func-1                  |\n"
+				expected += "| java8                        |     1 | java8-func-1                   |\n"
+				expected += "| \x1b[91mnodejs（Deprecated）\x1b[0m         |     2 | nodejs0.10-func-1,             |\n"
+				expected += "|                              |       | nodejs0.10-func-2              |\n"
+				expected += "| nodejs10.x                   |     1 | node10-func-1                  |\n"
+				expected += "| nodejs12.x                   |     1 | node12-func-1                  |\n"
+				expected += "| \x1b[91mnodejs4.3（Deprecated）\x1b[0m      |     1 | nodejs4.3-func-1               |\n"
+				expected += "| \x1b[91mnodejs4.3-edge（Deprecated）\x1b[0m |     1 | nodejs4.3edge-func-1           |\n"
+				expected += "| \x1b[91mnodejs6.10（Deprecated）\x1b[0m     |     1 | nodejs6.10-func-1              |\n"
+				expected += "| \x1b[91mnodejs8.10（Deprecated）\x1b[0m     |     1 | nodejs8.10-func-1              |\n"
+				expected += "| provided                     |     6 | provided-func-1,               |\n"
+				expected += "|                              |       | provided-func-2,               |\n"
+				expected += "|                              |       | provided-func-3,               |\n"
+				expected += "|                              |       | provided-func-4,               |\n"
+				expected += "|                              |       | provided-func-5,               |\n"
+				expected += "|                              |       | provided-func-6                |\n"
+				expected += "| python3.6                    |     1 | python3.6-func-1               |\n"
+				expected += "| python3.7                    |     1 | python3.7-func-1               |\n"
+				expected += "| python3.8                    |     3 | python3.8-func-1,              |\n"
+				expected += "|                              |       | python3.8-func-2,              |\n"
+				expected += "|                              |       | python3.8-func-3               |\n"
+				expected += "| ruby2.5                      |     1 | ruby2.5-func-1                 |\n"
+				expected += "| ruby2.7                      |     1 | ruby2.7-func-1                 |\n"
 				assert.Equal(t, expected, string(out))
 				assert.Nil(t, err)
 			})

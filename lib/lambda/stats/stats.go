@@ -16,6 +16,10 @@ import (
 
 var LambdaClient lambdaiface.LambdaAPI
 
+var (
+	verbose bool
+)
+
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -33,6 +37,7 @@ Please configure your aws credentials with following policies.
 			return err
 		},
 	}
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show detail")
 	return cmd
 }
 
@@ -120,18 +125,38 @@ func Output(count map[string][]string) string {
 	keys := sortKey(count)
 	tableString := &strings.Builder{}
 	table := tablewriter.NewWriter(tableString)
-	table.SetHeader([]string{"Runtime", "Count"})
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
+	if verbose {
+		verboseOutput(keys, table, count)
+	} else {
+		normalOutput(keys, table, count)
+	}
+	return tableString.String()
+}
+
+func normalOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
+	table.SetHeader([]string{"Runtime", "Count"})
 	for _, k := range keys {
-		if isDeprecatedRuntime(k) {
-			table.Append([]string{fmt.Sprintf("\x1b[91m%s（Deprecated）\x1b[0m", k), strconv.Itoa(len(count[k]))})
-		} else {
-			table.Append([]string{k, strconv.Itoa(len(count[k]))})
+		runtime := k
+		if isDeprecatedRuntime(runtime) {
+			runtime = fmt.Sprintf("\x1b[91m%s（Deprecated）\x1b[0m", runtime)
 		}
+		table.Append([]string{runtime, strconv.Itoa(len(count[k]))})
 	}
 	table.Render()
-	return tableString.String()
+}
+
+func verboseOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
+	table.SetHeader([]string{"Runtime", "Count", "Functions"})
+	for _, k := range keys {
+		runtime := k
+		if isDeprecatedRuntime(runtime) {
+			runtime = fmt.Sprintf("\x1b[91m%s（Deprecated）\x1b[0m", runtime)
+		}
+		table.Append([]string{runtime, strconv.Itoa(len(count[k])), strings.Join(count[k], ", ")})
+	}
+	table.Render()
 }
 
 var deprecatedRuntimes = [7]string{

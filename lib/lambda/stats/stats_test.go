@@ -124,7 +124,7 @@ func TestFetchData(t *testing.T) {
 }
 
 func TestOutput(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
+	t.Run("with no option", func(t *testing.T) {
 		lm := &stats.MockLambdaClient{}
 		initMockClient(lm)
 
@@ -152,6 +152,55 @@ func TestOutput(t *testing.T) {
 		expected += "| ruby2.7                      |     1 |\n"
 
 		cmd := stats.NewCmd()
+		var args []string
+		data, err := stats.FetchData(cmd, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual := stats.Output(data)
+		assert.Equal(t, expected, actual)
+		assert.Nil(t, err)
+		lm.AssertNumberOfCalls(t, "ListFunctions", 2)
+	})
+
+	t.Run("with verbose option", func(t *testing.T) {
+		lm := &stats.MockLambdaClient{}
+		initMockClient(lm)
+
+		expected := "|           RUNTIME            | COUNT |           FUNCTIONS            |\n"
+		expected += "|------------------------------|-------|--------------------------------|\n"
+		expected += "| \x1b[91mdotnetcore1.0（Deprecated）\x1b[0m  |     1 | dotnet1.0-func-1               |\n"
+		expected += "| \x1b[91mdotnetcore2.0（Deprecated）\x1b[0m  |     1 | dotnet2.0-func-1               |\n"
+		expected += "| dotnetcore2.1                |     1 | dotnet2.1-func-1               |\n"
+		expected += "| dotnetcore3.1                |     1 | dotnet3.1-func-1               |\n"
+		expected += "| go1.x                        |     4 | go1-func-1, go1-func-2,        |\n"
+		expected += "|                              |       | go1-func-3, go1-func-4         |\n"
+		expected += "| java11                       |     1 | java11-func-1                  |\n"
+		expected += "| java8                        |     1 | java8-func-1                   |\n"
+		expected += "| \x1b[91mnodejs（Deprecated）\x1b[0m         |     2 | nodejs0.10-func-1,             |\n"
+		expected += "|                              |       | nodejs0.10-func-2              |\n"
+		expected += "| nodejs10.x                   |     1 | node10-func-1                  |\n"
+		expected += "| nodejs12.x                   |     1 | node12-func-1                  |\n"
+		expected += "| \x1b[91mnodejs4.3（Deprecated）\x1b[0m      |     1 | nodejs4.3-func-1               |\n"
+		expected += "| \x1b[91mnodejs4.3-edge（Deprecated）\x1b[0m |     1 | nodejs4.3edge-func-1           |\n"
+		expected += "| \x1b[91mnodejs6.10（Deprecated）\x1b[0m     |     1 | nodejs6.10-func-1              |\n"
+		expected += "| \x1b[91mnodejs8.10（Deprecated）\x1b[0m     |     1 | nodejs8.10-func-1              |\n"
+		expected += "| provided                     |     6 | provided-func-1,               |\n"
+		expected += "|                              |       | provided-func-2,               |\n"
+		expected += "|                              |       | provided-func-3,               |\n"
+		expected += "|                              |       | provided-func-4,               |\n"
+		expected += "|                              |       | provided-func-5,               |\n"
+		expected += "|                              |       | provided-func-6                |\n"
+		expected += "| python3.6                    |     1 | python3.6-func-1               |\n"
+		expected += "| python3.7                    |     1 | python3.7-func-1               |\n"
+		expected += "| python3.8                    |     3 | python3.8-func-1,              |\n"
+		expected += "|                              |       | python3.8-func-2,              |\n"
+		expected += "|                              |       | python3.8-func-3               |\n"
+		expected += "| ruby2.5                      |     1 | ruby2.5-func-1                 |\n"
+		expected += "| ruby2.7                      |     1 | ruby2.7-func-1                 |\n"
+
+		cmd := stats.NewCmd()
+		cmd.Flags().Set("verbose", "true")
 		var args []string
 		data, err := stats.FetchData(cmd, args)
 		if err != nil {
