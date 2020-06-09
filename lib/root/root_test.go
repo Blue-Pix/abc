@@ -3,13 +3,18 @@ package root
 import (
 	"bytes"
 	"io/ioutil"
+	"strings"
 	"testing"
 
 	"github.com/Blue-Pix/abc/lib/ami"
 	"github.com/Blue-Pix/abc/lib/cfn"
 	"github.com/Blue-Pix/abc/lib/cfn/purge_stack"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
+	"github.com/Blue-Pix/abc/lib/lambda"
+	"github.com/Blue-Pix/abc/lib/lambda/stats"
+	awsLambda "github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestExecute(t *testing.T) {
@@ -35,7 +40,6 @@ func TestExecute(t *testing.T) {
 			}
 
 			assert.Equal(t, expected, string(out))
-			assert.Nil(t, err)
 		})
 
 		t.Run("success with long options", func(t *testing.T) {
@@ -53,7 +57,6 @@ func TestExecute(t *testing.T) {
 				t.Fatal(err)
 			}
 			assert.Equal(t, expected, string(out))
-			assert.Nil(t, err)
 		})
 	})
 
@@ -81,7 +84,6 @@ func TestExecute(t *testing.T) {
 				}
 				expected := "[{\"name\":\"bar_key1\",\"exporting_stack\":\"bar\"},{\"name\":\"foo_key2\",\"exporting_stack\":\"foo\"}]\n"
 				assert.Equal(t, expected, string(out))
-				assert.Nil(t, err)
 			})
 		})
 
@@ -111,7 +113,191 @@ func TestExecute(t *testing.T) {
 				}
 				expected := "All images in ecr1 successfully deleted.\nPerform delete-stack is in progress asynchronously.\nPlease check deletion status by yourself.\n"
 				assert.Equal(t, expected, string(out))
-				assert.Nil(t, err)
+			})
+		})
+	})
+
+	t.Run("lambda", func(t *testing.T) {
+		t.Run("stats", func(t *testing.T) {
+			t.Run("table format", func(t *testing.T) {
+				t.Run("with no verbose option", func(t *testing.T) {
+					args := []string{"lambda", "stats"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "|           RUNTIME            | COUNT |\n"
+					assert.True(t, strings.HasPrefix(string(out), expected))
+				})
+
+				t.Run("with verbose option", func(t *testing.T) {
+					args := []string{"lambda", "stats", "--verbose"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "|           RUNTIME            | COUNT |           FUNCTIONS            |\n"
+					assert.True(t, strings.HasPrefix(string(out), expected))
+				})
+
+				t.Run("no function exists", func(t *testing.T) {
+					args := []string{"lambda", "stats"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					lm.On("ListFunctions", mock.AnythingOfType("*lambda.ListFunctionsInput")).Return(&awsLambda.ListFunctionsOutput{
+						NextMarker: nil,
+						Functions:  []*awsLambda.FunctionConfiguration{},
+					}, nil)
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "no function found.\n"
+					assert.Equal(t, expected, string(out))
+				})
+			})
+
+			t.Run("json format", func(t *testing.T) {
+				t.Run("with no verbose option", func(t *testing.T) {
+					args := []string{"lambda", "stats", "--format", "json"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "[{\"runtime\":\"dotnetcore1.0\",\"count\":1,\"deprecated\":true},"
+					assert.True(t, strings.HasPrefix(string(out), expected))
+				})
+
+				t.Run("with verbose option", func(t *testing.T) {
+					args := []string{"lambda", "stats", "--format", "json", "--verbose"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "[{\"runtime\":\"dotnetcore1.0\",\"count\":1,\"functions\":[\"dotnet1.0-func-1\"],\"deprecated\":true},"
+					assert.True(t, strings.HasPrefix(string(out), expected))
+				})
+
+				t.Run("no function exists", func(t *testing.T) {
+					args := []string{"lambda", "stats", "--format", "json"}
+					cmd := NewCmd()
+					cmd.SetArgs(args)
+					lambdaCmd := lambda.NewCmd()
+					statsCmd := stats.NewCmd()
+					lambdaCmd.AddCommand(statsCmd)
+					cmd.AddCommand(lambdaCmd)
+
+					lm := &stats.MockLambdaClient{}
+					lm.On("ListFunctions", mock.AnythingOfType("*lambda.ListFunctionsInput")).Return(&awsLambda.ListFunctionsOutput{
+						NextMarker: nil,
+						Functions:  []*awsLambda.FunctionConfiguration{},
+					}, nil)
+					stats.SetMockDefaultBehaviour(lm)
+					stats.LambdaClient = lm
+
+					b := bytes.NewBufferString("")
+					cmd.SetOut(b)
+					cmd.Execute()
+					out, err := ioutil.ReadAll(b)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected := "[]\n"
+					assert.Equal(t, expected, string(out))
+				})
+			})
+
+			t.Run("invalid format", func(t *testing.T) {
+				args := []string{"lambda", "stats", "--format", "hoge"}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				lambdaCmd := lambda.NewCmd()
+				statsCmd := stats.NewCmd()
+				lambdaCmd.AddCommand(statsCmd)
+				cmd.AddCommand(lambdaCmd)
+
+				lm := &stats.MockLambdaClient{}
+				stats.SetMockDefaultBehaviour(lm)
+				stats.LambdaClient = lm
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				err := cmd.Execute()
+				assert.Error(t, err, "invalid format.")
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := ""
+				assert.Equal(t, expected, string(out))
 			})
 		})
 	})
