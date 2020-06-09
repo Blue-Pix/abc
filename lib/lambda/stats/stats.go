@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -18,6 +20,7 @@ var LambdaClient lambdaiface.LambdaAPI
 
 var (
 	verbose bool
+	format  string
 )
 
 func NewCmd() *cobra.Command {
@@ -38,6 +41,7 @@ Please configure your aws credentials with following policies.
 		},
 	}
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show detail")
+	cmd.Flags().StringVarP(&format, "format", "f", "table", "output format (table or json)")
 	return cmd
 }
 
@@ -50,7 +54,10 @@ func run(cmd *cobra.Command, args []string) error {
 	if len(data) == 0 {
 		str = "no function found"
 	} else {
-		str = Output(data)
+		str, err = Output(data)
+		if err != nil {
+			return err
+		}
 	}
 	cmd.Print(str)
 	return nil
@@ -121,21 +128,80 @@ func sortKey(m map[string][]string) []string {
 	return keys
 }
 
-func Output(count map[string][]string) string {
+func Output(count map[string][]string) (string, error) {
+	if format == "json" {
+		return jsonOutput(count)
+	} else if format == "table" {
+		return tableOutput(count), nil
+	}
+	return "", errors.New("invalid format.")
+}
+
+func jsonOutput(count map[string][]string) (string, error) {
+	if verbose {
+		return verboseJsonOutput(count)
+	} else {
+		return normalJsonOutput(count)
+	}
+}
+func normalJsonOutput(count map[string][]string) (string, error) {
+	keys := sortKey(count)
+
+	type Stats struct {
+		Runtime    string `json:"runtime"`
+		Count      int    `json:"count"`
+		Deprecated bool   `json:"deprecated"`
+	}
+
+	statsList := make([]Stats, len(keys))
+	for i, k := range keys {
+		statsList[i] = Stats{
+			Runtime:    k,
+			Count:      len(count[k]),
+			Deprecated: isDeprecatedRuntime(k),
+		}
+	}
+	jsonBytes, err := json.Marshal(statsList)
+	return string(jsonBytes), err
+}
+func verboseJsonOutput(count map[string][]string) (string, error) {
+	keys := sortKey(count)
+
+	type VerboseStats struct {
+		Runtime    string   `json:"runtime"`
+		Count      int      `json:"count"`
+		Functions  []string `json:"functions"`
+		Deprecated bool     `json:"deprecated"`
+	}
+
+	statsList := make([]VerboseStats, len(keys))
+	for i, k := range keys {
+		statsList[i] = VerboseStats{
+			Runtime:    k,
+			Count:      len(count[k]),
+			Functions:  count[k],
+			Deprecated: isDeprecatedRuntime(k),
+		}
+	}
+	jsonBytes, err := json.Marshal(statsList)
+	return string(jsonBytes), err
+}
+
+func tableOutput(count map[string][]string) string {
 	keys := sortKey(count)
 	tableString := &strings.Builder{}
 	table := tablewriter.NewWriter(tableString)
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
 	if verbose {
-		verboseOutput(keys, table, count)
+		verboseTableOutput(keys, table, count)
 	} else {
-		normalOutput(keys, table, count)
+		normalTableOutput(keys, table, count)
 	}
 	return tableString.String()
 }
 
-func normalOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
+func normalTableOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
 	table.SetHeader([]string{"Runtime", "Count"})
 	for _, k := range keys {
 		runtime := k
@@ -147,7 +213,7 @@ func normalOutput(keys []string, table *tablewriter.Table, count map[string][]st
 	table.Render()
 }
 
-func verboseOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
+func verboseTableOutput(keys []string, table *tablewriter.Table, count map[string][]string) {
 	table.SetHeader([]string{"Runtime", "Count", "Functions"})
 	for _, k := range keys {
 		runtime := k

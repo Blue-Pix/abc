@@ -251,6 +251,31 @@ func TestExecute(t *testing.T) {
 				assert.Equal(t, expected, string(out))
 				assert.Nil(t, err)
 			})
+
+			t.Run("invalid format", func(t *testing.T) {
+				args := []string{"lambda", "stats", "--format", "hoge"}
+				cmd := NewCmd()
+				cmd.SetArgs(args)
+				lambdaCmd := lambda.NewCmd()
+				statsCmd := stats.NewCmd()
+				lambdaCmd.AddCommand(statsCmd)
+				cmd.AddCommand(lambdaCmd)
+
+				lm := &stats.MockLambdaClient{}
+				stats.SetMockDefaultBehaviour(lm)
+				stats.LambdaClient = lm
+
+				b := bytes.NewBufferString("")
+				cmd.SetOut(b)
+				err := cmd.Execute()
+				assert.Error(t, err, "invalid format.")
+				out, err := ioutil.ReadAll(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := ""
+				assert.Equal(t, expected, string(out))
+			})
 		})
 	})
 }
