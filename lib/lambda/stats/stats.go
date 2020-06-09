@@ -51,15 +51,15 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var str string
-	if len(data) == 0 {
-		str = "no function found"
+	if len(data) == 0 && format == "table" {
+		str = "no function found."
 	} else {
 		str, err = Output(data)
 		if err != nil {
 			return err
 		}
 	}
-	cmd.Print(str)
+	cmd.Println(str)
 	return nil
 }
 
