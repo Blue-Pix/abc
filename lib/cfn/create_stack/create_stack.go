@@ -3,12 +3,14 @@ package create_stack
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 
 	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+	"github.com/awslabs/goformation"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,7 @@ var (
 	bucketName   string
 	bucketRegion string
 	bucketKey    string
+	parameters   map[string]string
 )
 
 func NewCmd() *cobra.Command {
@@ -39,6 +42,7 @@ Please configure your aws credentials with following policies.
 			return err
 		},
 	}
+	parameters = make(map[string]string)
 	return cmd
 }
 
@@ -52,6 +56,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 func ExecCreateStack(cmd *cobra.Command, args []string) error {
 	initClient(cmd)
+
 	cmd.Print("Stack name: ")
 	fmt.Scan(&stackName)
 	for {
@@ -76,6 +81,27 @@ func ExecCreateStack(cmd *cobra.Command, args []string) error {
 	} else {
 		cmd.Print("File path: ")
 		fmt.Scan(&filePath)
+	}
+
+	// ToDo download from s3
+	template, err := goformation.Open(filePath)
+	if err != nil {
+		log.Fatalf("There was an error processing the template: %s", err)
+	}
+	fmt.Println("Parameters: ")
+	for k, v := range template.Parameters {
+		var desc string
+		var defaultValue string
+		if v.(map[string]interface{})["Description"] != nil {
+			desc = fmt.Sprint(" ", fmt.Sprintf("(%s)", v.(map[string]interface{})["Description"]))
+		}
+		if v.(map[string]interface{})["Default"] != nil {
+			defaultValue = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
+		}
+		cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValue))
+		var input string
+		fmt.Scan(&input)
+		parameters[k] = input
 	}
 
 	output, err := createStack()
@@ -115,5 +141,17 @@ func createStack() (*cloudformation.CreateStackOutput, error) {
 
 		params.TemplateBody = aws.String(string(b))
 	}
+
+	if len(parameters) > 0 {
+		p := make([]*cloudformation.Parameter, len(parameters))
+		for k, v := range parameters {
+			p = append(p, &cloudformation.Parameter{
+				ParameterKey:   aws.String(k),
+				ParameterValue: aws.String(v),
+			})
+		}
+		params.SetParameters(p)
+	}
+
 	return CfnClient.CreateStack(params)
 }
