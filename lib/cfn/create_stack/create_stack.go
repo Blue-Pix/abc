@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/Blue-Pix/abc/lib/util"
 	"github.com/aws/aws-sdk-go/aws"
@@ -17,14 +18,16 @@ import (
 var CfnClient cloudformationiface.CloudFormationAPI
 
 var (
-	stackName       string
-	templateInS3    bool
-	filePath        string
-	bucketName      string
-	bucketRegion    string
-	bucketKey       string
-	parameters      map[string]string
-	disableRollback bool
+	stackName        string
+	templateInS3     bool
+	filePath         string
+	bucketName       string
+	bucketRegion     string
+	bucketKey        string
+	parameters       map[string]string
+	disableRollback  bool
+	timeoutInMinutes int64
+	notificationArns []string
 )
 
 func NewCmd() *cobra.Command {
@@ -34,6 +37,10 @@ func NewCmd() *cobra.Command {
 		Long: `
 [abc cfn create-stack]
 This command create CloudFormation's stack in interactive mode.
+Following options are not supported.
+- --rollback-configuration
+- 
+
 
 Internally it uses aws cloudformation api.
 Please configure your aws credentials with following policies.
@@ -65,6 +72,17 @@ func ExecCreateStack(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	disableRollback = askBool(cmd, "Disable rollback?(default false) (y or n): ")
+	askTimeoutInMinutes(cmd)
+	askNotificationArns(cmd)
+	if !askBool(cmd, `
+[Confirmation]
+Pass all capabilities below automatically, ok?
+- CAPABILITY_IAM
+- CAPABILITY_NAMED_IAM
+- CAPABILITY_AUTO_EXPAND 
+(y or n): `) {
+		return errors.New("operation cancelled.")
+	}
 
 	output, err := createStack()
 	if err != nil {
@@ -85,11 +103,17 @@ func initClient(cmd *cobra.Command) {
 
 func createStack() (*cloudformation.CreateStackOutput, error) {
 	params := &cloudformation.CreateStackInput{
-		StackName:       aws.String(stackName),
-		DisableRollback: aws.Bool(disableRollback),
+		StackName:        aws.String(stackName),
+		DisableRollback:  aws.Bool(disableRollback),
+		TimeoutInMinutes: aws.Int64(timeoutInMinutes),
+		Capabilities: []*string{
+			aws.String("CAPABILITY_IAM"),
+			aws.String("CAPABILITY_NAMED_IAM"),
+			aws.String("CAPABILITY_AUTO_EXPAND"),
+		},
 	}
 	if templateInS3 {
-		params.TemplateURL = aws.String(fmt.Sprintf("https://%s.s3-%s.amazonaws.com/%s", bucketName, bucketRegion, bucketKey))
+		params.SetTemplateURL(fmt.Sprintf("https://%s.s3-%s.amazonaws.com/%s", bucketName, bucketRegion, bucketKey))
 	} else {
 		f, err := os.Open(filePath)
 		if err != nil {
@@ -102,7 +126,7 @@ func createStack() (*cloudformation.CreateStackOutput, error) {
 			return nil, err
 		}
 
-		params.TemplateBody = aws.String(string(b))
+		params.SetTemplateBody(string(b))
 	}
 
 	if len(parameters) > 0 {
@@ -115,6 +139,14 @@ func createStack() (*cloudformation.CreateStackOutput, error) {
 		}
 		params.SetParameters(p)
 	}
+
+	p := make([]*string, len(notificationArns))
+	for _, s := range notificationArns {
+		if s != "" {
+			p = append(p, aws.String(s))
+		}
+	}
+	params.SetNotificationARNs(p)
 
 	return CfnClient.CreateStack(params)
 }
@@ -144,22 +176,41 @@ func askParameters(cmd *cobra.Command) error {
 	if err != nil {
 		return errors.New(fmt.Sprintf("There was an error processing the template: %s", err))
 	}
-	cmd.Println("Parameters: ")
-	for k, v := range template.Parameters {
-		var desc string
-		var defaultValue string
-		if v.(map[string]interface{})["Description"] != nil {
-			desc = fmt.Sprint(" ", fmt.Sprintf("(%s)", v.(map[string]interface{})["Description"]))
+	if len(template.Parameters) > 0 {
+		cmd.Println("Parameters: ")
+		for k, v := range template.Parameters {
+			var desc string
+			var defaultValue string
+			if v.(map[string]interface{})["Description"] != nil {
+				desc = fmt.Sprint(" ", fmt.Sprintf("(%s)", v.(map[string]interface{})["Description"]))
+			}
+			if v.(map[string]interface{})["Default"] != nil {
+				defaultValue = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
+			}
+			cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValue))
+			var input string
+			fmt.Scan(&input)
+			parameters[k] = input
 		}
-		if v.(map[string]interface{})["Default"] != nil {
-			defaultValue = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
-		}
-		cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValue))
-		var input string
-		fmt.Scan(&input)
-		parameters[k] = input
 	}
 	return nil
+}
+
+func askTimeoutInMinutes(cmd *cobra.Command) {
+	const defaultValue = 60
+	cmd.Printf("Timeout in minutes (default %d): ", defaultValue)
+	fmt.Scanln(&timeoutInMinutes)
+	if timeoutInMinutes == 0 {
+		timeoutInMinutes = defaultValue
+	}
+}
+
+func askNotificationArns(cmd *cobra.Command) {
+	var input string
+	cmd.Print("Notification arns (comma separated): ")
+	fmt.Scanln(&input)
+	input = strings.Trim(input, "\n")
+	notificationArns = strings.Split(input, ",")
 }
 
 func askBool(cmd *cobra.Command, msg string) bool {
