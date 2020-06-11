@@ -1,9 +1,9 @@
 package create_stack
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 
 	"github.com/Blue-Pix/abc/lib/util"
@@ -17,13 +17,14 @@ import (
 var CfnClient cloudformationiface.CloudFormationAPI
 
 var (
-	stackName    string
-	templateInS3 bool
-	filePath     string
-	bucketName   string
-	bucketRegion string
-	bucketKey    string
-	parameters   map[string]string
+	stackName       string
+	templateInS3    bool
+	filePath        string
+	bucketName      string
+	bucketRegion    string
+	bucketKey       string
+	parameters      map[string]string
+	disableRollback bool
 )
 
 func NewCmd() *cobra.Command {
@@ -57,52 +58,13 @@ func run(cmd *cobra.Command, args []string) error {
 func ExecCreateStack(cmd *cobra.Command, args []string) error {
 	initClient(cmd)
 
-	cmd.Print("Stack name: ")
-	fmt.Scan(&stackName)
-	for {
-		var input string
-		cmd.Print("Template in S3? (y or n): ")
-		fmt.Scan(&input)
-		if input == "y" {
-			templateInS3 = true
-			break
-		} else if input == "n" {
-			templateInS3 = false
-			break
-		}
+	askStackName(cmd)
+	templateInS3 = askBool(cmd, "Template in S3? (y or n): ")
+	askTemplateFile(cmd)
+	if err := askParameters(cmd); err != nil {
+		return err
 	}
-	if templateInS3 {
-		cmd.Print("S3 Bucket name: ")
-		fmt.Scan(&bucketName)
-		cmd.Print("S3 Bucket region: ")
-		fmt.Scan(&bucketRegion)
-		cmd.Print("S3 Bucket key: ")
-		fmt.Scan(&bucketKey)
-	} else {
-		cmd.Print("File path: ")
-		fmt.Scan(&filePath)
-	}
-
-	// ToDo download from s3
-	template, err := goformation.Open(filePath)
-	if err != nil {
-		log.Fatalf("There was an error processing the template: %s", err)
-	}
-	fmt.Println("Parameters: ")
-	for k, v := range template.Parameters {
-		var desc string
-		var defaultValue string
-		if v.(map[string]interface{})["Description"] != nil {
-			desc = fmt.Sprint(" ", fmt.Sprintf("(%s)", v.(map[string]interface{})["Description"]))
-		}
-		if v.(map[string]interface{})["Default"] != nil {
-			defaultValue = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
-		}
-		cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValue))
-		var input string
-		fmt.Scan(&input)
-		parameters[k] = input
-	}
+	disableRollback = askBool(cmd, "Disable rollback?(default false) (y or n): ")
 
 	output, err := createStack()
 	if err != nil {
@@ -123,7 +85,8 @@ func initClient(cmd *cobra.Command) {
 
 func createStack() (*cloudformation.CreateStackOutput, error) {
 	params := &cloudformation.CreateStackInput{
-		StackName: aws.String(stackName),
+		StackName:       aws.String(stackName),
+		DisableRollback: aws.Bool(disableRollback),
 	}
 	if templateInS3 {
 		params.TemplateURL = aws.String(fmt.Sprintf("https://%s.s3-%s.amazonaws.com/%s", bucketName, bucketRegion, bucketKey))
@@ -154,4 +117,60 @@ func createStack() (*cloudformation.CreateStackOutput, error) {
 	}
 
 	return CfnClient.CreateStack(params)
+}
+
+func askStackName(cmd *cobra.Command) {
+	cmd.Print("Stack name: ")
+	fmt.Scan(&stackName)
+}
+
+func askTemplateFile(cmd *cobra.Command) {
+	if templateInS3 {
+		cmd.Print("S3 Bucket name: ")
+		fmt.Scan(&bucketName)
+		cmd.Print("S3 Bucket region: ")
+		fmt.Scan(&bucketRegion)
+		cmd.Print("S3 Bucket key: ")
+		fmt.Scan(&bucketKey)
+	} else {
+		cmd.Print("File path: ")
+		fmt.Scan(&filePath)
+	}
+}
+
+func askParameters(cmd *cobra.Command) error {
+	// ToDo download from s3
+	template, err := goformation.Open(filePath)
+	if err != nil {
+		return errors.New(fmt.Sprintf("There was an error processing the template: %s", err))
+	}
+	cmd.Println("Parameters: ")
+	for k, v := range template.Parameters {
+		var desc string
+		var defaultValue string
+		if v.(map[string]interface{})["Description"] != nil {
+			desc = fmt.Sprint(" ", fmt.Sprintf("(%s)", v.(map[string]interface{})["Description"]))
+		}
+		if v.(map[string]interface{})["Default"] != nil {
+			defaultValue = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
+		}
+		cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValue))
+		var input string
+		fmt.Scan(&input)
+		parameters[k] = input
+	}
+	return nil
+}
+
+func askBool(cmd *cobra.Command, msg string) bool {
+	for {
+		var input string
+		cmd.Print(msg)
+		fmt.Scan(&input)
+		if input == "y" {
+			return true
+		} else if input == "n" {
+			return false
+		}
+	}
 }
