@@ -1,10 +1,12 @@
 package create_stack
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Blue-Pix/abc/lib/util"
@@ -31,9 +33,9 @@ var (
 	parameters   map[string]string
 	// disableRollback             bool
 	timeoutInMinutes            int64
-	notificationArns            []string
+	notificationArns            string
 	roleArn                     string
-	onFailure                   int
+	onFailure                   string
 	tags                        map[string]string
 	clientRequestToken          string
 	enableTerminationProtection bool
@@ -100,23 +102,26 @@ func ExecCreateStack(cmd *cobra.Command, args []string) (string, error) {
 }
 
 func ask(cmd *cobra.Command) error {
-	askStackName(cmd)
-	templateInS3 = askBool(cmd, "Template in S3? (y or n): ")
-	askTemplateFile(cmd)
-	if err := askParameters(cmd); err != nil {
+	scanner := bufio.NewScanner(cmd.InOrStdin())
+	scanner.Split(bufio.ScanLines)
+
+	stackName = scan(cmd, scanner, "Stack name: ")
+	templateInS3 = askBool(cmd, scanner, "Template in S3? (y or n): ")
+	askTemplateFile(cmd, scanner)
+
+	if err := askParameters(cmd, scanner); err != nil {
 		return err
 	}
-	// disableRollback = askBool(cmd, "Disable rollback?(default false) (y or n): ")
-	askTimeoutInMinutes(cmd)
-	askNotificationArns(cmd)
-	if !askBool(cmd, capabilitiesMessage) {
+	askTimeoutInMinutes(cmd, scanner)
+	notificationArns = optionalScan(cmd, scanner, "Notification arns (comma separated): ")
+	if !askBool(cmd, scanner, capabilitiesMessage) {
 		return errors.New("operation cancelled.")
 	}
-	askRoleArn(cmd)
-	askOnFailure(cmd)
-	askTags(cmd)
-	askClientRequestToken(cmd)
-	enableTerminationProtection = askBool(cmd, "Enable termination protection? (y or n): ")
+	roleArn = optionalScan(cmd, scanner, "Role arn: ")
+	askOnFailure(cmd, scanner)
+	askTags(cmd, scanner)
+	clientRequestToken = optionalScan(cmd, scanner, "Client request token: ")
+	enableTerminationProtection = askBool(cmd, scanner, "Enable termination protection? (y or n): ")
 	return nil
 }
 
@@ -225,7 +230,8 @@ func buildParametersInput() []*cloudformation.Parameter {
 
 func buildNotificationArnsInput() []*string {
 	p := []*string{}
-	for _, s := range notificationArns {
+	arns := strings.Split(notificationArns, ",")
+	for _, s := range arns {
 		if s != "" {
 			p = append(p, aws.String(s))
 		}
@@ -235,11 +241,11 @@ func buildNotificationArnsInput() []*string {
 
 func buildOnFailureInput() string {
 	switch onFailure {
-	case 1:
+	case "1":
 		return "DO_NOTHING"
-	case 2:
+	case "2":
 		return "ROLLBACK"
-	case 3:
+	case "3":
 		return "DELETE"
 	}
 	return ""
@@ -260,22 +266,31 @@ func createStack(input *cloudformation.CreateStackInput) (*cloudformation.Create
 	return CfnClient.CreateStack(input)
 }
 
-func askStackName(cmd *cobra.Command) {
-	cmd.Print("Stack name: ")
-	fmt.Scan(&stackName)
+func scan(cmd *cobra.Command, scanner *bufio.Scanner, msg string) string {
+	cmd.Print(msg)
+	for scanner.Scan() {
+		input := scanner.Text()
+		if input != "" {
+			return input
+		}
+		cmd.Print(msg)
+	}
+	return ""
 }
 
-func askTemplateFile(cmd *cobra.Command) {
+func optionalScan(cmd *cobra.Command, scanner *bufio.Scanner, msg string) string {
+	cmd.Print(msg)
+	scanner.Scan()
+	return scanner.Text()
+}
+
+func askTemplateFile(cmd *cobra.Command, scanner *bufio.Scanner) {
 	if templateInS3 {
-		cmd.Print("S3 Bucket name: ")
-		fmt.Scan(&bucketName)
-		cmd.Print("S3 Bucket region: ")
-		fmt.Scan(&bucketRegion)
-		cmd.Print("S3 Bucket key: ")
-		fmt.Scan(&bucketKey)
+		bucketName = scan(cmd, scanner, "S3 Bucket name: ")
+		bucketKey = scan(cmd, scanner, "S3 Bucket key: ")
+		bucketRegion = scan(cmd, scanner, "S3 Bucket region: ")
 	} else {
-		cmd.Print("File path: ")
-		fmt.Scan(&filePath)
+		filePath = scan(cmd, scanner, "File path: ")
 	}
 }
 
@@ -290,7 +305,7 @@ func parseTemplate() (*_cloudformation.Template, error) {
 	return goformation.Open(filePath)
 }
 
-func askParameters(cmd *cobra.Command) error {
+func askParameters(cmd *cobra.Command, scanner *bufio.Scanner) error {
 	template, err := parseTemplate()
 	if err != nil {
 		return errors.New(fmt.Sprintf("There was an error processing the template: %s", err))
@@ -308,9 +323,7 @@ func askParameters(cmd *cobra.Command) error {
 				defaultValueMsg = fmt.Sprint(" ", fmt.Sprintf("[%s]", v.(map[string]interface{})["Default"]))
 				defaultValue = v.(map[string]interface{})["Default"].(string)
 			}
-			cmd.Print(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValueMsg))
-			var input string
-			fmt.Scanln(&input)
+			input := optionalScan(cmd, scanner, fmt.Sprint(" ", fmt.Sprintf("%s%s%s: ", k, desc, defaultValueMsg)))
 			if input != "" {
 				parameters[k] = input
 			} else if defaultValue != "" {
@@ -321,66 +334,69 @@ func askParameters(cmd *cobra.Command) error {
 	return nil
 }
 
-func askTimeoutInMinutes(cmd *cobra.Command) {
+func askTimeoutInMinutes(cmd *cobra.Command, scanner *bufio.Scanner) {
 	const defaultValue = 60
-	cmd.Printf("Timeout in minutes (default %d): ", defaultValue)
-	fmt.Scanln(&timeoutInMinutes)
-	if timeoutInMinutes == 0 {
-		timeoutInMinutes = defaultValue
+	for {
+		input := optionalScan(cmd, scanner, fmt.Sprintf("Timeout in minutes (default %d): ", defaultValue))
+		if input == "" {
+			timeoutInMinutes = defaultValue
+			break
+		} else {
+			num, err := strconv.Atoi(input)
+			if err == nil {
+				timeoutInMinutes = int64(num)
+				break
+			}
+		}
 	}
 }
 
-func askNotificationArns(cmd *cobra.Command) {
-	var input string
-	cmd.Print("Notification arns (comma separated): ")
-	fmt.Scanln(&input)
-	input = strings.Trim(input, "\n")
-	notificationArns = strings.Split(input, ",")
-}
-
-func askRoleArn(cmd *cobra.Command) {
-	cmd.Print("Role arn: ")
-	fmt.Scanln(&roleArn)
-}
-
-func askOnFailure(cmd *cobra.Command) {
-	cmd.Print(`
+func askOnFailure(cmd *cobra.Command, scanner *bufio.Scanner) {
+	const msg = `
 [On failure]
 1. DO_NOTHING
 2. ROLLBACK
 3. DELETE
-type number: `)
-	fmt.Scanln(&onFailure)
-}
-
-func askTags(cmd *cobra.Command) error {
-	var input string
-	cmd.Print("Tags (Key=Value comma separated): ")
-	fmt.Scanln(&input)
-	for _, tag := range strings.Split(input, ",") {
-		arr := strings.Split(tag, "=")
-		if len(arr) != 2 {
-			return errors.New("invalid format.")
+type number: `
+	cmd.Print(msg)
+	for scanner.Scan() {
+		input := scanner.Text()
+		if input == "1" || input == "2" || input == "3" {
+			onFailure = input
+			break
 		}
-		tags[arr[0]] = arr[1]
-	}
-	return nil
-}
-
-func askClientRequestToken(cmd *cobra.Command) {
-	cmd.Print("Client request token: ")
-	fmt.Scanln(&clientRequestToken)
-}
-
-func askBool(cmd *cobra.Command, msg string) bool {
-	for {
-		var input string
 		cmd.Print(msg)
-		fmt.Scan(&input)
-		if input == "y" {
-			return true
-		} else if input == "n" {
-			return false
+	}
+}
+
+func askTags(cmd *cobra.Command, scanner *bufio.Scanner) {
+	cmd.Print("Tags (Key=Value comma separated): ")
+	for scanner.Scan() {
+		input := scanner.Text()
+		if input == "" {
+			break
+		}
+		valid := true
+		for _, tag := range strings.Split(input, ",") {
+			arr := strings.Split(tag, "=")
+			if len(arr) != 2 {
+				cmd.Println("[ERROR] invalid format.")
+				valid = false
+			}
+			tags[arr[0]] = arr[1]
+		}
+		if valid {
+			break
 		}
 	}
+}
+
+func askBool(cmd *cobra.Command, scanner *bufio.Scanner, msg string) bool {
+	input := scan(cmd, scanner, msg)
+	if input == "y" {
+		return true
+	} else if input == "n" {
+		return false
+	}
+	return false
 }
