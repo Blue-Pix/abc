@@ -2,7 +2,6 @@ package create_stack_test
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -22,6 +21,7 @@ func initMockClient(cm *create_stack.MockCfnClient, sm *create_stack.MockS3Clien
 
 func TestExecCreateStack(t *testing.T) {
 	cases := []struct {
+		desc                        string
 		stackName                   string
 		templateInS3                string
 		filePath                    string
@@ -38,25 +38,26 @@ func TestExecCreateStack(t *testing.T) {
 		createStackInput            *cloudformation.CreateStackInput
 	}{
 		{
+			desc:                        "default",
 			stackName:                   "test-stack",
 			templateInS3:                "n",
-			filePath:                    "../../../templates/sample-iam.cf.yml",
-			parameter1:                  "",
+			filePath:                    "../../../testdata/create-stack-sample.cf.yml",
+			parameter1:                  "zzzzzzzz",
 			parameter2:                  "yyyyyyyy",
 			timeoutInMinutes:            "30",
-			notificationARNs:            "",
+			notificationARNs:            "a,b,c,d",
 			capabilities:                "y",
-			roleArn:                     "",
+			roleArn:                     "test-role",
 			onFailure:                   "2",
-			tags:                        "",
-			clientRequestToken:          "",
+			tags:                        "app=abc,env=test",
+			clientRequestToken:          "test-token",
 			enableTerminationProtection: "n",
 			createStackInput: &cloudformation.CreateStackInput{
 				StackName: aws.String("test-stack"),
 				Parameters: []*cloudformation.Parameter{
 					{
 						ParameterKey:   aws.String("Param1"),
-						ParameterValue: aws.String("xxxxxxxx"),
+						ParameterValue: aws.String("zzzzzzzz"),
 					},
 					{
 						ParameterKey:   aws.String("Param2"),
@@ -68,17 +69,33 @@ func TestExecCreateStack(t *testing.T) {
 					aws.String("CAPABILITY_NAMED_IAM"),
 					aws.String("CAPABILITY_AUTO_EXPAND"),
 				},
-				OnFailure:                   aws.String("ROLLBACK"),
-				NotificationARNs:            []*string{},
-				Tags:                        []*cloudformation.Tag{},
+				RoleARN:   aws.String("test-role"),
+				OnFailure: aws.String("ROLLBACK"),
+				NotificationARNs: []*string{
+					aws.String("a"),
+					aws.String("b"),
+					aws.String("c"),
+					aws.String("d"),
+				},
+				Tags: []*cloudformation.Tag{
+					{
+						Key:   aws.String("app"),
+						Value: aws.String("abc"),
+					},
+					{
+						Key:   aws.String("env"),
+						Value: aws.String("test"),
+					},
+				},
+				ClientRequestToken:          aws.String("test-token"),
 				EnableTerminationProtection: aws.Bool(false),
 				TimeoutInMinutes:            aws.Int64(int64(30)),
 			},
 		},
 	}
 
-	for i, tt := range cases {
-		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
+	for _, tt := range cases {
+		t.Run(tt.desc, func(t *testing.T) {
 			f, _ := os.Open(tt.filePath)
 			defer f.Close()
 			b, _ := ioutil.ReadAll(f)

@@ -219,10 +219,11 @@ func readTemplateBodyFromS3() ([]byte, error) {
 
 func buildParametersInput() []*cloudformation.Parameter {
 	p := []*cloudformation.Parameter{}
-	for k, v := range parameters {
+	keys := util.SortStringMap(parameters)
+	for _, k := range keys {
 		p = append(p, &cloudformation.Parameter{
 			ParameterKey:   aws.String(k),
-			ParameterValue: aws.String(v),
+			ParameterValue: aws.String(parameters[k]),
 		})
 	}
 	return p
@@ -253,10 +254,11 @@ func buildOnFailureInput() string {
 
 func buildTagsInput() []*cloudformation.Tag {
 	p := []*cloudformation.Tag{}
-	for k, v := range tags {
+	keys := util.SortStringMap(tags)
+	for _, k := range keys {
 		p = append(p, &cloudformation.Tag{
 			Key:   aws.String(k),
-			Value: aws.String(v),
+			Value: aws.String(tags[k]),
 		})
 	}
 	return p
@@ -312,7 +314,9 @@ func askParameters(cmd *cobra.Command, scanner *bufio.Scanner) error {
 	}
 	if len(template.Parameters) > 0 {
 		cmd.Println("Parameters: ")
-		for k, v := range template.Parameters {
+		keys := util.SortGeneralMap(template.Parameters)
+		for _, k := range keys {
+			v := template.Parameters[k]
 			var desc string
 			var defaultValue string
 			var defaultValueMsg string
@@ -357,7 +361,7 @@ func askOnFailure(cmd *cobra.Command, scanner *bufio.Scanner) {
 1. DO_NOTHING
 2. ROLLBACK
 3. DELETE
-type number: `
+(type number): `
 	cmd.Print(msg)
 	for scanner.Scan() {
 		input := scanner.Text()
