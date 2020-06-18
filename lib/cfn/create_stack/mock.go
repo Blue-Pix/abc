@@ -2,6 +2,7 @@ package create_stack
 
 import (
 	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -46,16 +47,16 @@ func SetMockDefaultBehaviour(cm *MockCfnClient, sm *MockS3Client) {
 		StackName: aws.String(stackName),
 	}).Return(
 		&cloudformation.CreateStackOutput{
-			StackId: aws.String("xxxxxxxxxx"),
+			StackId: aws.String("1234567"),
 		},
 		nil,
 	)
-	sm.On("GetObject", &s3.GetObjectInput{
-		Bucket: aws.String("bucket_name"),
-		Key:    aws.String("key"),
-	}).Return(
+	f, _ := os.Open("../../../testdata/create-stack-sample.cf.yml")
+	defer f.Close()
+	b, _ := ioutil.ReadAll(f)
+	sm.On("GetObject", mock.AnythingOfType("*s3.GetObjectInput")).Return(
 		&s3.GetObjectOutput{
-			Body: ioutil.NopCloser(strings.NewReader("hello world")),
+			Body: ioutil.NopCloser(strings.NewReader(string(b))),
 		},
 		nil,
 	)

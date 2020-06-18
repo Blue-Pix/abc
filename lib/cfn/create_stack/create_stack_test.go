@@ -3,6 +3,7 @@ package create_stack_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -28,6 +29,9 @@ type testCase struct {
 	stackName                   string // user input
 	templateInS3                string // user input
 	filePath                    string // user input
+	bucketName                  string
+	bucketKey                   string
+	bucketRegion                string
 	parameter1                  string // user input
 	parameter2                  string // user input
 	timeoutInMinutes            string // user input
@@ -38,25 +42,48 @@ type testCase struct {
 	tags                        string // user input
 	clientRequestToken          string // user input
 	enableTerminationProtection string // user input
-	createStackInput            *cloudformation.CreateStackInput
+	expectedCreateStackInput    *cloudformation.CreateStackInput
 	expected_error              error
+	expectedOutputRegex         string
+	getObjectCalledCount        int
 }
 
 func makeInputBuffer(c testCase) *bytes.Buffer {
-	input := []string{
-		c.stackName,
-		c.templateInS3,
-		c.filePath,
-		c.parameter1,
-		c.parameter2,
-		c.timeoutInMinutes,
-		c.notificationARNs,
-		c.capabilities,
-		c.roleArn,
-		c.onFailure,
-		c.tags,
-		c.clientRequestToken,
-		c.enableTerminationProtection,
+	var input []string
+	if c.templateInS3 == "y" {
+		input = []string{
+			c.stackName,
+			c.templateInS3,
+			c.bucketName,
+			c.bucketKey,
+			c.bucketRegion,
+			c.parameter1,
+			c.parameter2,
+			c.timeoutInMinutes,
+			c.notificationARNs,
+			c.capabilities,
+			c.roleArn,
+			c.onFailure,
+			c.tags,
+			c.clientRequestToken,
+			c.enableTerminationProtection,
+		}
+	} else {
+		input = []string{
+			c.stackName,
+			c.templateInS3,
+			c.filePath,
+			c.parameter1,
+			c.parameter2,
+			c.timeoutInMinutes,
+			c.notificationARNs,
+			c.capabilities,
+			c.roleArn,
+			c.onFailure,
+			c.tags,
+			c.clientRequestToken,
+			c.enableTerminationProtection,
+		}
 	}
 	return bytes.NewBufferString(strings.Join(input, "\n"))
 }
@@ -94,7 +121,7 @@ func TestExecCreateStack(t *testing.T) {
 			tags:                        "app=abc,env=test",
 			clientRequestToken:          "test-token",
 			enableTerminationProtection: "n",
-			createStackInput: &cloudformation.CreateStackInput{
+			expectedCreateStackInput: &cloudformation.CreateStackInput{
 				StackName: aws.String("test-stack"),
 				Parameters: []*cloudformation.Parameter{
 					{
@@ -133,18 +160,105 @@ func TestExecCreateStack(t *testing.T) {
 				EnableTerminationProtection: aws.Bool(false),
 				TimeoutInMinutes:            aws.Int64(int64(30)),
 			},
+			getObjectCalledCount: 0,
+		},
+		{
+			desc:                        "template file located in local",
+			stackName:                   "test-stack",
+			templateInS3:                "n",
+			filePath:                    "../../../testdata/create-stack-sample.cf.yml",
+			parameter1:                  "",
+			parameter2:                  "yyyyyyyy",
+			timeoutInMinutes:            "",
+			notificationARNs:            "",
+			capabilities:                "y",
+			roleArn:                     "",
+			onFailure:                   "2",
+			tags:                        "",
+			clientRequestToken:          "",
+			enableTerminationProtection: "n",
+			expectedCreateStackInput: &cloudformation.CreateStackInput{
+				StackName: aws.String("test-stack"),
+				Parameters: []*cloudformation.Parameter{
+					{
+						ParameterKey:   aws.String("Param1"),
+						ParameterValue: aws.String("xxxxxxxx"),
+					},
+					{
+						ParameterKey:   aws.String("Param2"),
+						ParameterValue: aws.String("yyyyyyyy"),
+					},
+				},
+				Capabilities: []*string{
+					aws.String("CAPABILITY_IAM"),
+					aws.String("CAPABILITY_NAMED_IAM"),
+					aws.String("CAPABILITY_AUTO_EXPAND"),
+				},
+				OnFailure:                   aws.String("ROLLBACK"),
+				NotificationARNs:            []*string{},
+				Tags:                        []*cloudformation.Tag{},
+				EnableTerminationProtection: aws.Bool(false),
+				TimeoutInMinutes:            aws.Int64(int64(60)),
+			},
+			getObjectCalledCount: 0,
+		},
+		{
+			desc:                        "template file located in S3",
+			stackName:                   "test-stack",
+			templateInS3:                "y",
+			bucketName:                  "sample-bucket",
+			bucketKey:                   "sample/create-stack-sample.cf.yml",
+			bucketRegion:                "us-west2",
+			parameter1:                  "",
+			parameter2:                  "yyyyyyyy",
+			timeoutInMinutes:            "",
+			notificationARNs:            "",
+			capabilities:                "y",
+			roleArn:                     "",
+			onFailure:                   "2",
+			tags:                        "",
+			clientRequestToken:          "",
+			enableTerminationProtection: "n",
+			expectedCreateStackInput: &cloudformation.CreateStackInput{
+				StackName: aws.String("test-stack"),
+				Parameters: []*cloudformation.Parameter{
+					{
+						ParameterKey:   aws.String("Param1"),
+						ParameterValue: aws.String("xxxxxxxx"),
+					},
+					{
+						ParameterKey:   aws.String("Param2"),
+						ParameterValue: aws.String("yyyyyyyy"),
+					},
+				},
+				Capabilities: []*string{
+					aws.String("CAPABILITY_IAM"),
+					aws.String("CAPABILITY_NAMED_IAM"),
+					aws.String("CAPABILITY_AUTO_EXPAND"),
+				},
+				OnFailure:                   aws.String("ROLLBACK"),
+				NotificationARNs:            []*string{},
+				Tags:                        []*cloudformation.Tag{},
+				EnableTerminationProtection: aws.Bool(false),
+				TimeoutInMinutes:            aws.Int64(int64(60)),
+			},
+			getObjectCalledCount: 1,
 		},
 	}
 
 	for _, tt := range green_cases {
 		t.Run(tt.desc, func(t *testing.T) {
-			f, _ := os.Open(tt.filePath)
-			defer f.Close()
-			b, _ := ioutil.ReadAll(f)
-			tt.createStackInput.SetTemplateBody(string(b))
+			if tt.templateInS3 == "y" {
+				tt.expectedCreateStackInput.SetTemplateURL(fmt.Sprintf("https://%s.s3-%s.amazonaws.com/%s", tt.bucketName, tt.bucketRegion, tt.bucketKey))
+			} else {
+				f, _ := os.Open(tt.filePath)
+				defer f.Close()
+				b, _ := ioutil.ReadAll(f)
+				tt.expectedCreateStackInput.SetTemplateBody(string(b))
+			}
 
 			cm := &create_stack.MockCfnClient{}
-			cm.On("CreateStack", tt.createStackInput).Return(
+			cm.On("CreateStack", tt.expectedCreateStackInput).Return(
 				&cloudformation.CreateStackOutput{
 					StackId: aws.String("1234567"),
 				},
@@ -160,17 +274,26 @@ func TestExecCreateStack(t *testing.T) {
 			assert.Equal(t, "1234567", stackId)
 			assert.Nil(t, err)
 			cm.AssertNumberOfCalls(t, "CreateStack", 1)
-			sm.AssertNumberOfCalls(t, "GetObject", 0)
+			sm.AssertNumberOfCalls(t, "GetObject", tt.getObjectCalledCount)
 		})
 	}
 
 	red_cases := []testCase{
 		{
-			desc:           "stack name is empty",
-			stackName:      "\nhoge",
-			templateInS3:   "n",
-			filePath:       "./invalid_path",
-			expected_error: errors.New("There was an error processing the template: open ./invalid_path: no such file or directory"),
+			desc:                "stack name is empty",
+			stackName:           "\nhoge",
+			templateInS3:        "n",
+			filePath:            "./invalid_path", // to abort scan
+			expected_error:      errors.New("There was an error processing the template: open ./invalid_path: no such file or directory"),
+			expectedOutputRegex: "Stack name:.+Stack name:.+",
+		},
+		{
+			desc:                "invalid input for template location",
+			stackName:           "hoge",
+			templateInS3:        "invalid_string\nn",
+			filePath:            "./invalid_path", // to abort scan
+			expected_error:      errors.New("There was an error processing the template: open ./invalid_path: no such file or directory"),
+			expectedOutputRegex: "Template in S3?.+Template in S3?.+",
 		},
 	}
 
@@ -193,7 +316,7 @@ func TestExecCreateStack(t *testing.T) {
 
 			stackId, err := create_stack.ExecCreateStack(cmd, []string{})
 
-			expectedOutput := compileRegex(t, "Stack name:.+Stack name:.+")
+			expectedOutput := compileRegex(t, tt.expectedOutputRegex)
 			actualOutput := readOutput(t, b)
 			assert.Regexp(t, expectedOutput, actualOutput)
 			assert.Equal(t, "", stackId)
