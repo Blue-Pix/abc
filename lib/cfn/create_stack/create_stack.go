@@ -24,14 +24,13 @@ var CfnClient cloudformationiface.CloudFormationAPI
 var S3Client s3iface.S3API
 
 var (
-	stackName    string
-	templateInS3 bool
-	filePath     string
-	bucketName   string
-	bucketRegion string
-	bucketKey    string
-	parameters   map[string]string
-	// disableRollback             bool
+	stackName                   string
+	templateInS3                bool
+	filePath                    string
+	bucketName                  string
+	bucketRegion                string
+	bucketKey                   string
+	parameters                  map[string]string
 	timeoutInMinutes            int64
 	notificationArns            string
 	roleArn                     string
@@ -90,7 +89,7 @@ func ExecCreateStack(cmd *cobra.Command, args []string) (string, error) {
 	if err := ask(cmd); err != nil {
 		return "", err
 	}
-	input, err := BuildCreateStackInput()
+	input, err := buildCreateStackInput()
 	if err != nil {
 		return "", err
 	}
@@ -138,7 +137,7 @@ func initClient(cmd *cobra.Command) {
 	}
 }
 
-func BuildCreateStackInput() (*cloudformation.CreateStackInput, error) {
+func buildCreateStackInput() (*cloudformation.CreateStackInput, error) {
 	input := &cloudformation.CreateStackInput{
 		StackName: aws.String(stackName),
 		// DisableRollback:  aws.Bool(disableRollback),
@@ -396,11 +395,12 @@ func askTags(cmd *cobra.Command, scanner *bufio.Scanner) {
 }
 
 func askBool(cmd *cobra.Command, scanner *bufio.Scanner, msg string) bool {
-	input := scan(cmd, scanner, msg)
-	if input == "y" {
-		return true
-	} else if input == "n" {
-		return false
+	for {
+		input := scan(cmd, scanner, msg)
+		if input == "y" {
+			return true
+		} else if input == "n" {
+			return false
+		}
 	}
-	return false
 }
