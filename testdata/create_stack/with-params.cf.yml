@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  ParamWithDescription:
+    Description: this is description for ParamWithDescription
+    Type: String
+  ParamWithoutDescription:
+    Type: String
+  ParamWithDefaultValue:
+    Type: String
+    Default: this is default value for ParamWithDefaultValue
+  ParamWithoutDefaultValue:
+    Type: String
+Resources:
+  SampleQueue:
+    Type: AWS::SQS::Queue

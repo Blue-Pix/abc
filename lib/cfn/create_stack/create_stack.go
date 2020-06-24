@@ -24,20 +24,20 @@ var CfnClient cloudformationiface.CloudFormationAPI
 var S3Client s3iface.S3API
 
 var (
-	stackName                   string
-	templateInS3                bool
-	filePath                    string
-	bucketName                  string
-	bucketRegion                string
-	bucketKey                   string
+	stackName                   string // required
+	templateInS3                bool   // required (y or n)
+	filePath                    string // required if template in local
+	bucketName                  string // required if template in S3
+	bucketRegion                string // required if template in S3
+	bucketKey                   string // required if template in S3
 	parameters                  map[string]string
 	timeoutInMinutes            int64
 	notificationArns            string
 	roleArn                     string
-	onFailure                   string
+	onFailure                   string // required (1 or 2 or 3)
 	tags                        map[string]string
 	clientRequestToken          string
-	enableTerminationProtection bool
+	enableTerminationProtection bool // required (y or n)
 )
 
 const capabilitiesMessage = `
@@ -47,6 +47,22 @@ Pass all capabilities below automatically, ok?
 - CAPABILITY_NAMED_IAM
 - CAPABILITY_AUTO_EXPAND 
 (y or n): `
+
+const DefaultTimeoutInMinutes = 60
+const YES = "y"
+const NO = "n"
+
+var CAPABILITIES = []*string{
+	aws.String("CAPABILITY_IAM"),
+	aws.String("CAPABILITY_NAMED_IAM"),
+	aws.String("CAPABILITY_AUTO_EXPAND"),
+}
+
+const (
+	DO_NOTHING = "1"
+	ROLLBACK   = "2"
+	DELETE     = "3"
+)
 
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -64,7 +80,10 @@ Following options are not supported.
 
 Internally it uses aws cloudformation api.
 Please configure your aws credentials with following policies.
-- cloudformation:CreateStack`,
+- cloudformation:CreateStack
+
+If your template file located in S3,
+required additional permission for s3:GetObject.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := run(cmd, args)
 			return err
@@ -141,12 +160,8 @@ func buildCreateStackInput() (*cloudformation.CreateStackInput, error) {
 	input := &cloudformation.CreateStackInput{
 		StackName: aws.String(stackName),
 		// DisableRollback:  aws.Bool(disableRollback),
-		TimeoutInMinutes: aws.Int64(timeoutInMinutes),
-		Capabilities: []*string{
-			aws.String("CAPABILITY_IAM"),
-			aws.String("CAPABILITY_NAMED_IAM"),
-			aws.String("CAPABILITY_AUTO_EXPAND"),
-		},
+		TimeoutInMinutes:            aws.Int64(timeoutInMinutes),
+		Capabilities:                CAPABILITIES,
 		EnableTerminationProtection: aws.Bool(enableTerminationProtection),
 	}
 
@@ -202,7 +217,6 @@ func readTemplateBodyFromS3() ([]byte, error) {
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(bucketKey),
 	}
-	fmt.Println(input)
 	result, err := S3Client.GetObject(input)
 	if err != nil {
 		return nil, err
@@ -241,11 +255,11 @@ func buildNotificationArnsInput() []*string {
 
 func buildOnFailureInput() string {
 	switch onFailure {
-	case "1":
+	case DO_NOTHING:
 		return "DO_NOTHING"
-	case "2":
+	case ROLLBACK:
 		return "ROLLBACK"
-	case "3":
+	case DELETE:
 		return "DELETE"
 	}
 	return ""
@@ -338,11 +352,10 @@ func askParameters(cmd *cobra.Command, scanner *bufio.Scanner) error {
 }
 
 func askTimeoutInMinutes(cmd *cobra.Command, scanner *bufio.Scanner) {
-	const defaultValue = 60
 	for {
-		input := optionalScan(cmd, scanner, fmt.Sprintf("Timeout in minutes (default %d): ", defaultValue))
+		input := optionalScan(cmd, scanner, fmt.Sprintf("Timeout in minutes (default %d): ", DefaultTimeoutInMinutes))
 		if input == "" {
-			timeoutInMinutes = defaultValue
+			timeoutInMinutes = DefaultTimeoutInMinutes
 			break
 		} else {
 			num, err := strconv.Atoi(input)
@@ -363,9 +376,8 @@ func askOnFailure(cmd *cobra.Command, scanner *bufio.Scanner) {
 (type number): `
 	cmd.Print(msg)
 	for scanner.Scan() {
-		input := scanner.Text()
-		if input == "1" || input == "2" || input == "3" {
-			onFailure = input
+		onFailure = scanner.Text()
+		if onFailure == DO_NOTHING || onFailure == ROLLBACK || onFailure == DELETE {
 			break
 		}
 		cmd.Print(msg)
@@ -397,9 +409,9 @@ func askTags(cmd *cobra.Command, scanner *bufio.Scanner) {
 func askBool(cmd *cobra.Command, scanner *bufio.Scanner, msg string) bool {
 	for {
 		input := scan(cmd, scanner, msg)
-		if input == "y" {
+		if input == YES {
 			return true
-		} else if input == "n" {
+		} else if input == NO {
 			return false
 		}
 	}

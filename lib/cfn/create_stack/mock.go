@@ -42,16 +42,13 @@ func (client *MockS3Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOu
 }
 
 func SetMockDefaultBehaviour(cm *MockCfnClient, sm *MockS3Client) {
-	stackName := "foo"
-	cm.On("CreateStack", &cloudformation.CreateStackInput{
-		StackName: aws.String(stackName),
-	}).Return(
+	cm.On("CreateStack", mock.AnythingOfType("*cloudformation.CreateStackInput")).Return(
 		&cloudformation.CreateStackOutput{
-			StackId: aws.String("1234567"),
+			StackId: aws.String("sample-stack-id"),
 		},
 		nil,
 	)
-	f, _ := os.Open("../../../testdata/create-stack-sample.cf.yml")
+	f, _ := os.Open("../../../testdata/create_stack/no-params.cf.yml")
 	defer f.Close()
 	b, _ := ioutil.ReadAll(f)
 	sm.On("GetObject", mock.AnythingOfType("*s3.GetObjectInput")).Return(
