@@ -1,0 +1,12 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Param1:
+    Description: sample parameter 1
+    Type: String
+    Default: xxxxxxxx
+  Param2:
+    Description: sample parameter 2
+    Type: String
+Resources:
+  SampleQueue:
+    Type: AWS::SQS::Queue

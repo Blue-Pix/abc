@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/Blue-Pix/abc/lib/cfn"
+	"github.com/Blue-Pix/abc/lib/cfn/create_stack"
 	"github.com/Blue-Pix/abc/lib/cfn/purge_stack"
 	"github.com/Blue-Pix/abc/lib/cfn/unused_exports"
 )
@@ -9,10 +10,12 @@ import (
 var cfnCmd = cfn.NewCmd()
 var unusedExportsCmd = unused_exports.NewCmd()
 var purgeStackCmd = purge_stack.NewCmd()
+var createStackCmd = create_stack.NewCmd()
 
 func init() {
 	cfnCmd.SetOut(rootCmd.OutOrStdout())
 	rootCmd.AddCommand(cfnCmd)
 	cfnCmd.AddCommand(unusedExportsCmd)
 	cfnCmd.AddCommand(purgeStackCmd)
+	cfnCmd.AddCommand(createStackCmd)
 }
